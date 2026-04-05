@@ -12,7 +12,9 @@ This project trains a PyTorch neural network on tissue-matched nasopharyngeal si
 
 ## Results
 
-**Validation Pearson r = 0.950, RMSE = 0.033** on held-out pseudo-bulk with noise augmentation (gene dropout, library size variation, Gaussian noise). 14 cell types deconvolved across 484 patients. 10 show statistically significant composition changes between COVID+ and negative (Mann-Whitney U, p < 0.05).
+**Validation Pearson r = 0.950, RMSE = 0.033** on held-out pseudo-bulk with noise augmentation. This is an upper bound — pseudo-bulk validation systematically overestimates real-bulk performance because it does not capture batch effects or library preparation artefacts ([BAL benchmark, 2026](https://www.biorxiv.org/content/10.64898/2026.01.14.699304v1.full)). 14 cell types deconvolved across 484 patients. 10 show statistically significant composition changes between COVID+ and negative (Mann-Whitney U, p < 0.05).
+
+Per-cell-type validation (held-out pseudo-bulk): Squamous r=0.978, Ciliated r=0.977, T Cells r=0.975, Macrophages r=0.974, Basal r=0.972, Goblet r=0.967, Secretory r=0.965, Ionocytes r=0.961, Developing Ciliated r=0.957, Deuterosomal r=0.956, Dendritic r=0.955, Mitotic Basal r=0.943, Developing Secretory/Goblet r=0.937, B Cells r=0.936.
 
 ![Validation](docs/validation_scatter.png)
 
@@ -75,6 +77,7 @@ The original Lieberman et al. (2020) analysis used CIBERSORTx with a blood-deriv
 3. **Pseudo-bulk generation**: 10,000 synthetic bulk samples created by mixing single cells in Dirichlet-sampled proportions weighted by reference prevalence (500 cells per sample).
 4. **Noise augmentation**: Gene dropout (2-8%), library size variation (log-normal), Gaussian noise applied to pseudo-bulk to simulate real bulk technical artefacts.
 5. **Neural network**: 3-layer feedforward network (2000 → 256 → 128 → 14) with batch normalisation, dropout (0.3/0.2), and softmax output. Trained with KL divergence loss, Adam optimiser, ReduceLROnPlateau scheduler.
+6. **Baseline comparison**: Non-negative least squares (NNLS) on the same validation data. Neural network r=0.950 vs NNLS r=0.609 — the learned model substantially outperforms the linear baseline.
 6. **Early stopping**: Patience = 20 epochs. Training stopped at epoch 109.
 7. **Validation**: 80/20 train/val split on noisy pseudo-bulk. Pearson r = 0.950, RMSE = 0.033.
 8. **Application**: Deconvolve all 484 GSE152075 bulk samples. Mann-Whitney U test for composition differences between COVID+ and negative.

@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from sklearn.model_selection import train_test_split
 from scipy.stats import pearsonr, mannwhitneyu
+from scipy.optimize import nnls
 
 RANDOM_STATE = 42
 N_PSEUDO_BULK = 10000     # more training data = better generalisation
@@ -532,6 +533,30 @@ def main():
 
     print("\n--- Validate on pseudo-bulk ---")
     correlations, overall_r = validate_model(model, X_val, y_val, cell_types)
+
+    # NNLS baseline for comparison
+    print("\n--- NNLS baseline ---")
+    nnls_pred = np.zeros_like(y_val)
+    # Build reference signature matrix (mean expression per cell type)
+    X_ref = adata_ref[:, hvg].X
+    if hasattr(X_ref, 'toarray'):
+        X_ref = X_ref.toarray()
+    sig_matrix = np.zeros((len(hvg), len(cell_types)))
+    for j, ct in enumerate(cell_types):
+        mask = adata_ref.obs["cell_type"] == ct
+        sig_matrix[:, j] = X_ref[mask.values].mean(axis=0)
+    sig_matrix = np.log2(sig_matrix + 1)
+
+    for i in range(len(X_val)):
+        sample = X_val[i] * X_val[i].sum()  # un-normalise
+        coefs, _ = nnls(sig_matrix, sample)
+        total = coefs.sum()
+        nnls_pred[i] = coefs / total if total > 0 else np.ones(len(cell_types)) / len(cell_types)
+
+    nnls_r, _ = pearsonr(y_val.flatten(), nnls_pred.flatten())
+    nnls_rmse = np.sqrt(np.mean((y_val - nnls_pred) ** 2))
+    print(f"  NNLS baseline: r = {nnls_r:.3f}, RMSE = {nnls_rmse:.4f}")
+    print(f"  Neural network: r = {overall_r:.3f}, RMSE = {rmse:.4f}")
 
     print("\n--- Deconvolve GSE152075 ---")
     proportions = deconvolve_bulk(model, bulk_counts, hvg)
