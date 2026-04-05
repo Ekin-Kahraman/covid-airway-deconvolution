@@ -11,7 +11,7 @@ This project trains a PyTorch neural network on tissue-matched nasopharyngeal si
 
 ## Results
 
-**Validation Pearson r = 0.988, RMSE = 0.016** on held-out pseudo-bulk samples. 14 cell types deconvolved across 484 patients.
+**Validation Pearson r = 0.950, RMSE = 0.033** on held-out pseudo-bulk with noise augmentation (gene dropout, library size variation, Gaussian noise). 14 cell types deconvolved across 484 patients. 10 show statistically significant composition changes between COVID+ and negative (Mann-Whitney U, p < 0.05).
 
 ![Validation](docs/validation_scatter.png)
 
@@ -19,10 +19,11 @@ This project trains a PyTorch neural network on tissue-matched nasopharyngeal si
 
 | Depleted in COVID+ | p-value | Expanded in COVID+ | p-value |
 |---|---|---|---|
-| Secretory cells (-14.9%) | 0.004 | Squamous cells (+14.1%) — squamous metaplasia | 1.1e-07 |
-| Basal cells (-4.4%) — stem cell depletion | 8.8e-11 | Developing secretory/goblet (+5.4%) — goblet hyperplasia | 5.5e-13 |
-| | | Macrophages (+3.0%) — inflammatory infiltration | 2.7e-06 |
-| | | T cells (+1.5%) — adaptive immune response | 0.001 |
+| Basal cells (-5.1%) — stem cell depletion | 3.6e-04 | Goblet cells (+5.4%) — mucus overproduction | 2.0e-04 |
+| Developing ciliated (-0.4%) | 9.8e-03 | T cells (+5.1%) — adaptive immune infiltration | 1.5e-06 |
+| | | Macrophages (+1.8%) — inflammatory recruitment | 4.9e-07 |
+| | | Dendritic cells (+0.8%) — antigen presentation | 2.3e-08 |
+| | | Squamous cells (+0.8%) — squamous metaplasia | 1.1e-03 |
 
 ![Composition](docs/composition_by_condition.png)
 
@@ -49,7 +50,8 @@ The original Lieberman et al. (2020) analysis used CIBERSORTx with a blood-deriv
 2. **Shared gene space**: 19,759 shared genes between reference and bulk → 2,000 HVGs
 3. **Pseudo-bulk generation**: 5,000 synthetic bulk samples created by mixing single cells in random Dirichlet-sampled proportions (500 cells per sample)
 4. **Neural network**: 2-layer feedforward network (2000 → 256 → 128 → 14) with batch normalisation, dropout, and softmax output. Trained with KL divergence loss.
-5. **Validation**: 80/20 train/val split on pseudo-bulk. Pearson r = 0.988, RMSE = 0.016. All cell types r > 0.93.
+5. **Noise augmentation**: Gene dropout (2-8%), library size variation, Gaussian noise applied to pseudo-bulk to simulate real bulk artefacts.
+6. **Validation**: 80/20 train/val split. Pearson r = 0.950, RMSE = 0.033 on noisy pseudo-bulk. Early stopping (patience=20).
 6. **Application**: Deconvolve all 484 GSE152075 bulk samples. Compare cell type proportions between COVID+ and negative.
 
 ## Design Decisions
