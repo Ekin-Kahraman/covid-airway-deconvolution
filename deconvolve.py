@@ -24,11 +24,11 @@ from sklearn.model_selection import train_test_split
 from scipy.stats import pearsonr, mannwhitneyu
 
 RANDOM_STATE = 42
-N_PSEUDO_BULK = 5000
+N_PSEUDO_BULK = 10000     # more training data = better generalisation
 CELLS_PER_SAMPLE = 500
 N_TOP_GENES = 2000
-BATCH_SIZE = 64
-EPOCHS = 100
+BATCH_SIZE = 128
+EPOCHS = 200
 LEARNING_RATE = 1e-3
 HIDDEN_DIM = 256
 
@@ -183,12 +183,34 @@ def generate_pseudo_bulk(adata_ref, hvg, n_samples=N_PSEUDO_BULK):
         if (i + 1) % 1000 == 0:
             print(f"  {i + 1}/{n_samples}")
 
+    # Augment with realistic noise to improve generalisation to real bulk data.
+    # Pseudo-bulk is clean; real bulk has dropout, library size variation, and
+    # technical noise that the model needs to tolerate.
+
+    # 1. Gene dropout: randomly zero out 2-8% of genes per sample
+    #    (real bulk has some genes below detection limit)
+    for i in range(n_samples):
+        dropout_rate = np.random.uniform(0.02, 0.08)
+        dropout_mask = np.random.random(len(hvg)) > dropout_rate
+        bulk_profiles[i] *= dropout_mask
+
+    # 2. Library size variation: scale by a log-normal factor
+    #    (real samples vary in sequencing depth)
+    lib_factors = np.random.lognormal(mean=0, sigma=0.15, size=n_samples)
+    bulk_profiles = bulk_profiles * lib_factors[:, np.newaxis]
+
+    # 3. Gaussian noise: small additive noise (technical variation)
+    noise_scale = np.std(bulk_profiles[bulk_profiles > 0]) * 0.05
+    noise = np.random.normal(0, noise_scale, bulk_profiles.shape)
+    bulk_profiles = np.maximum(bulk_profiles + noise, 0)
+
+    # Log-transform and normalise
     bulk_profiles = np.log2(bulk_profiles + 1)
     row_sums = bulk_profiles.sum(axis=1, keepdims=True)
     row_sums[row_sums == 0] = 1
     bulk_profiles = bulk_profiles / row_sums
 
-    print(f"  Done: {n_samples} samples, {n_types} cell types")
+    print(f"  Done: {n_samples} samples, {n_types} cell types (with noise augmentation)")
     return bulk_profiles, true_fractions, cell_types
 
 
@@ -338,29 +360,31 @@ def validate_model(model, X_val, y_val, cell_types):
     for ct, vals in sorted(correlations.items(), key=lambda x: -x[1]["r"]):
         print(f"    {ct}: r = {vals['r']:.3f}")
 
-    # Scatter plots
+    # Scatter plots — 4 columns, enough rows for all cell types
     n_types = len(cell_types)
-    cols = min(4, n_types)
+    cols = 4
     rows = (n_types + cols - 1) // cols
-    fig, axes = plt.subplots(rows, cols, figsize=(4 * cols, 4 * rows))
+    fig, axes = plt.subplots(rows, cols, figsize=(3.5 * cols, 3.5 * rows))
     if n_types == 1:
         axes = np.array([axes])
     axes = np.atleast_2d(axes).flatten()
 
     for i, ct in enumerate(cell_types):
-        axes[i].scatter(y_val[:, i], pred[:, i], s=5, alpha=0.3)
-        axes[i].plot([0, 1], [0, 1], "r--", linewidth=1)
-        axes[i].set_xlabel("True")
-        axes[i].set_ylabel("Predicted")
-        axes[i].set_title(f"{ct}\nr={correlations[ct]['r']:.3f}", fontsize=9)
+        axes[i].scatter(y_val[:, i], pred[:, i], s=5, alpha=0.3, color="#1976D2")
+        axes[i].plot([0, 1], [0, 1], "r--", linewidth=1, alpha=0.5)
+        axes[i].set_xlabel("True", fontsize=8)
+        axes[i].set_ylabel("Predicted", fontsize=8)
+        axes[i].set_title(f"{ct}\nr={correlations[ct]['r']:.3f}", fontsize=8, pad=4)
         axes[i].set_xlim(-0.05, 1.05)
         axes[i].set_ylim(-0.05, 1.05)
+        axes[i].tick_params(labelsize=7)
 
     for j in range(n_types, len(axes)):
         axes[j].set_visible(False)
 
-    fig.suptitle(f"Pseudo-bulk Validation — Overall r = {overall_r:.3f}", fontsize=13)
-    fig.tight_layout()
+    fig.suptitle(f"Pseudo-bulk Validation — r = {overall_r:.3f}, RMSE = {rmse:.4f}",
+                 fontsize=12, y=1.01)
+    fig.tight_layout(rect=[0, 0, 1, 0.98])
     fig.savefig(FIG_DIR / "validation_scatter.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
     return correlations, overall_r
@@ -375,18 +399,29 @@ def analyse_results(proportions, cell_types, conditions, sample_ids):
     prop_df["condition"] = conditions.values
     prop_df.to_csv(RESULTS_DIR / "cell_type_proportions.csv")
 
-    # Mean composition by condition
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-    for i, cond in enumerate(["negative", "positive"]):
-        mask = prop_df["condition"] == cond
-        means = prop_df.loc[mask, cell_types].mean().sort_values(ascending=True)
-        colour = "#2196F3" if cond == "negative" else "#E53935"
-        axes[i].barh(range(len(means)), means.values, color=colour)
-        axes[i].set_yticks(range(len(means)))
-        axes[i].set_yticklabels(means.index, fontsize=9)
-        axes[i].set_xlabel("Mean proportion")
-        axes[i].set_title(f"COVID-19 {cond.capitalize()} (n={mask.sum()})")
-    fig.suptitle("Cell Type Composition — Nasopharyngeal Swabs", fontsize=13)
+    # Grouped bar chart — side by side comparison
+    neg_means = prop_df.loc[prop_df["condition"] == "negative", cell_types].mean()
+    pos_means = prop_df.loc[prop_df["condition"] == "positive", cell_types].mean()
+
+    # Sort by absolute difference
+    order = (pos_means - neg_means).abs().sort_values(ascending=True).index
+    neg_sorted = neg_means[order]
+    pos_sorted = pos_means[order]
+
+    y = np.arange(len(order))
+    height = 0.35
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+    ax.barh(y - height/2, neg_sorted.values, height, label=f"Negative (n=54)",
+            color="#2196F3", alpha=0.85)
+    ax.barh(y + height/2, pos_sorted.values, height, label=f"Positive (n=430)",
+            color="#E53935", alpha=0.85)
+    ax.set_yticks(y)
+    ax.set_yticklabels(order, fontsize=9)
+    ax.set_xlabel("Mean proportion")
+    ax.set_title("Cell Type Composition — COVID-19 Positive vs Negative", fontsize=13)
+    ax.legend(loc="lower right")
+    ax.grid(True, alpha=0.1, axis="x")
     fig.tight_layout()
     fig.savefig(FIG_DIR / "composition_by_condition.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
