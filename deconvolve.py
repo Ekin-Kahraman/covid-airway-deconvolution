@@ -426,6 +426,32 @@ def analyse_results(proportions, cell_types, conditions, sample_ids):
     fig.savefig(FIG_DIR / "composition_by_condition.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
 
+    # Difference plot — shows the change (positive - negative) with significance
+    diff = pos_means - neg_means
+    diff_sorted = diff.sort_values()
+    colours = ["#E53935" if d > 0 else "#2196F3" for d in diff_sorted.values]
+
+    # Run Mann-Whitney for significance markers
+    sig_markers = []
+    for ct in diff_sorted.index:
+        neg = prop_df.loc[prop_df["condition"] == "negative", ct]
+        pos = prop_df.loc[prop_df["condition"] == "positive", ct]
+        _, p = mannwhitneyu(neg, pos, alternative="two-sided")
+        sig_markers.append("*" if p < 0.05 else "")
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+    bars = ax.barh(range(len(diff_sorted)), diff_sorted.values, color=colours, alpha=0.85)
+    ax.set_yticks(range(len(diff_sorted)))
+    labels = [f"{ct} {sig}" for ct, sig in zip(diff_sorted.index, sig_markers)]
+    ax.set_yticklabels(labels, fontsize=9)
+    ax.axvline(0, color="black", linewidth=0.8)
+    ax.set_xlabel("Proportion difference (COVID+ minus Negative)")
+    ax.set_title("Cell Type Composition Change in COVID-19\n* = significant (Mann-Whitney p < 0.05)", fontsize=12)
+    ax.grid(True, alpha=0.1, axis="x")
+    fig.tight_layout()
+    fig.savefig(FIG_DIR / "composition_difference.png", dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
     # Boxplots of top changing cell types
     pos_means = prop_df.loc[prop_df["condition"] == "positive", cell_types].mean()
     neg_means = prop_df.loc[prop_df["condition"] == "negative", cell_types].mean()

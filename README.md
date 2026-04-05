@@ -27,6 +27,8 @@ This project trains a PyTorch neural network on tissue-matched nasopharyngeal si
 | Developing secretory/goblet | +1.3% | 1.1e-06 | Progenitor cells differentiating toward the goblet lineage — active tissue remodelling |
 | Dendritic cells | +0.8% | 2.3e-08 | Professional antigen-presenting cells bridging innate and adaptive immunity |
 | Squamous cells | +0.8% | 1.1e-03 | Squamous metaplasia — damaged pseudostratified epithelium replaced by stress-resistant squamous cells |
+| Ionocytes | +0.2% | 4.7e-02 | Rare chemosensory cells — modest expansion may reflect mucosal irritation signalling |
+| Mitotic basal cells | +0.1% | 2.8e-02 | Proliferating basal cells — residual stem cells entering cell cycle to compensate for epithelial loss |
 
 **Depleted in COVID+ (epithelial damage):**
 
@@ -35,9 +37,18 @@ This project trains a PyTorch neural network on tissue-matched nasopharyngeal si
 | Basal cells | -5.1% | 3.6e-04 | Epithelial stem cell depletion — the regenerative layer is damaged, impairing tissue repair |
 | Developing ciliated | -0.4% | 9.8e-03 | Fewer progenitors differentiating toward ciliated fate — consistent with basal cell loss upstream |
 
+**Not significantly changed:** Ciliated cells (-2.1%, p=0.64), Secretory cells (-7.0%, p=0.09), B cells (-0.8%, p=0.27), Deuterosomal cells (+0.05%, p=0.10). The absence of significant ciliated cell depletion despite known ACE2-mediated viral entry may reflect the limitations of the pseudo-bulk training approach, or that ciliated cell loss is heterogeneous across patients and does not reach significance with n=54 negative controls.
+
+![Difference](docs/composition_difference.png)
+
+<details>
+<summary>Additional figures</summary>
+
 ![Composition](docs/composition_by_condition.png)
 
 ![Boxplots](docs/boxplots_by_condition.png)
+
+</details>
 
 ### Biological interpretation
 
@@ -103,6 +114,7 @@ results/
 └── figures/
     ├── validation_scatter.png          Predicted vs true per cell type
     ├── training_loss.png               Training and validation loss curves
+    ├── composition_difference.png      Proportion change with significance
     ├── composition_by_condition.png    Grouped bar chart by condition
     └── boxplots_by_condition.png       Top changing cell types
 ```
