@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Verify imports and model architecture
+        run: |
+          python -c "
+          import torch
+          import scanpy as sc
+          from deconvolve import DeconvNet
+          model = DeconvNet(n_genes=2000, n_types=14)
+          x = torch.randn(4, 2000)
+          out = model(x)
+          assert out.shape == (4, 14), f'Wrong shape: {out.shape}'
+          assert abs(out.sum(dim=1).mean().item() - 1.0) < 1e-5, 'Softmax not summing to 1'
+          print(f'Model OK: (4, 2000) -> {out.shape}, sum={out.sum(dim=1).mean():.4f}')
+          "
