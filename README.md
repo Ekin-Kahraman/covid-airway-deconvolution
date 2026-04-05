@@ -1,5 +1,6 @@
 # COVID-19 Airway Cell Type Deconvolution
 
+[![CI](https://github.com/Ekin-Kahraman/covid-airway-deconvolution/actions/workflows/ci.yml/badge.svg)](https://github.com/Ekin-Kahraman/covid-airway-deconvolution/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
 
