@@ -21,7 +21,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import matplotlib.pyplot as plt
 from pathlib import Path
 from sklearn.model_selection import train_test_split
-from scipy.stats import pearsonr
+from scipy.stats import pearsonr, mannwhitneyu
 
 RANDOM_STATE = 42
 N_PSEUDO_BULK = 5000
@@ -158,13 +158,22 @@ def generate_pseudo_bulk(adata_ref, hvg, n_samples=N_PSEUDO_BULK):
     bulk_profiles = np.zeros((n_samples, len(hvg)))
     true_fractions = np.zeros((n_samples, n_types))
 
+    # Dirichlet alpha weighted by reference prevalence — generates
+    # realistic proportions where common types (ciliated) dominate and
+    # rare types (DCs) appear infrequently, matching real tissue composition.
+    ref_prevalence = np.array([len(type_indices[ct]) for ct in cell_types], dtype=float)
+    ref_prevalence = ref_prevalence / ref_prevalence.sum()
+    alpha = ref_prevalence * n_types  # scale so mean matches reference
+
     for i in range(n_samples):
-        props = np.random.dirichlet(np.ones(n_types))
+        props = np.random.dirichlet(alpha)
         true_fractions[i] = props
 
         mixed = np.zeros(len(hvg))
         for j, ct in enumerate(cell_types):
-            n_cells = max(1, int(props[j] * CELLS_PER_SAMPLE))
+            n_cells = int(props[j] * CELLS_PER_SAMPLE)
+            if n_cells == 0:
+                continue
             n_cells = min(n_cells, len(type_indices[ct]))
             sampled = np.random.choice(type_indices[ct], size=n_cells, replace=True)
             mixed += expr.loc[sampled].sum(axis=0).values
@@ -228,6 +237,8 @@ def train_model(X_train, y_train, X_val, y_val, n_types):
 
     best_val_loss = float("inf")
     best_state = None
+    patience_counter = 0
+    PATIENCE = 20
     train_losses, val_losses = [], []
 
     print(f"\nTraining ({EPOCHS} epochs, {n_genes} genes, {n_types} cell types)...")
@@ -236,7 +247,7 @@ def train_model(X_train, y_train, X_val, y_val, n_types):
         epoch_loss = 0
         for xb, yb in train_dl:
             pred = model(xb)
-            loss = criterion(pred.log(), yb)
+            loss = criterion(torch.clamp(pred, min=1e-8).log(), yb)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -248,16 +259,23 @@ def train_model(X_train, y_train, X_val, y_val, n_types):
         model.eval()
         with torch.no_grad():
             val_pred = model(X_v)
-            val_loss = criterion(val_pred.log(), y_v).item()
+            val_loss = criterion(torch.clamp(val_pred, min=1e-8).log(), y_v).item()
         val_losses.append(val_loss)
         scheduler.step(val_loss)
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_state = {k: v.clone() for k, v in model.state_dict().items()}
+            patience_counter = 0
+        else:
+            patience_counter += 1
 
         if (epoch + 1) % 20 == 0:
             print(f"  Epoch {epoch+1}/{EPOCHS} — train: {train_loss:.4f}, val: {val_loss:.4f}")
+
+        if patience_counter >= PATIENCE:
+            print(f"  Early stopping at epoch {epoch+1} (no improvement for {PATIENCE} epochs)")
+            break
 
     model.load_state_dict(best_state)
     print(f"  Best validation loss: {best_val_loss:.4f}")
@@ -314,8 +332,9 @@ def validate_model(model, X_val, y_val, cell_types):
         correlations[ct] = {"r": r, "p": p}
 
     overall_r, _ = pearsonr(y_val.flatten(), pred.flatten())
+    rmse = np.sqrt(np.mean((y_val - pred) ** 2))
 
-    print(f"\n  Validation Pearson r = {overall_r:.3f}")
+    print(f"\n  Validation Pearson r = {overall_r:.3f}, RMSE = {rmse:.4f}")
     for ct, vals in sorted(correlations.items(), key=lambda x: -x[1]["r"]):
         print(f"    {ct}: r = {vals['r']:.3f}")
 
@@ -387,7 +406,7 @@ def analyse_results(proportions, cell_types, conditions, sample_ids):
     for i, ct in enumerate(top_changed):
         neg_vals = prop_df.loc[prop_df["condition"] == "negative", ct]
         pos_vals = prop_df.loc[prop_df["condition"] == "positive", ct]
-        bp = axes[i].boxplot([neg_vals, pos_vals], labels=["Neg", "Pos"],
+        bp = axes[i].boxplot([neg_vals, pos_vals], tick_labels=["Neg", "Pos"],
                             patch_artist=True, widths=0.6)
         bp["boxes"][0].set_facecolor("#90CAF9")
         bp["boxes"][1].set_facecolor("#EF9A9A")
@@ -402,10 +421,20 @@ def analyse_results(proportions, cell_types, conditions, sample_ids):
     fig.savefig(FIG_DIR / "boxplots_by_condition.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
 
-    # Summary
+    # Summary with statistical tests
     summary = prop_df.groupby("condition")[cell_types].mean().T
     if "positive" in summary.columns and "negative" in summary.columns:
         summary["diff"] = summary["positive"] - summary["negative"]
+
+        # Mann-Whitney U test for each cell type
+        pvals = {}
+        for ct in cell_types:
+            neg = prop_df.loc[prop_df["condition"] == "negative", ct]
+            pos = prop_df.loc[prop_df["condition"] == "positive", ct]
+            _, p = mannwhitneyu(neg, pos, alternative="two-sided")
+            pvals[ct] = p
+        summary["p_value"] = pd.Series(pvals)
+        summary["significant"] = summary["p_value"] < 0.05
         summary = summary.sort_values("diff", ascending=False)
     summary.to_csv(RESULTS_DIR / "mean_proportions_by_condition.csv")
 
