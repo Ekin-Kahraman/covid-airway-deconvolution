@@ -11,18 +11,18 @@ This project trains a PyTorch neural network on tissue-matched nasopharyngeal si
 
 ## Results
 
-**Validation Pearson r = 0.973** on held-out pseudo-bulk samples. 14 cell types deconvolved across 484 patients.
+**Validation Pearson r = 0.988, RMSE = 0.016** on held-out pseudo-bulk samples. 14 cell types deconvolved across 484 patients.
 
 ![Validation](docs/validation_scatter.png)
 
 ### What changes during COVID-19 infection
 
-| Depleted in COVID+ | Expanded in COVID+ |
-|---|---|
-| Basal cells (-5.6%) — epithelial stem cells damaged | Developing secretory/goblet (+5.8%) — goblet cell hyperplasia |
-| Secretory cells (-5.3%) — secretory epithelium lost | Squamous cells (+4.2%) — squamous metaplasia |
-| Ciliated cells (-3.9%) — SARS-CoV-2 targets ACE2+ ciliated epithelium | T cells (+2.3%) — immune infiltration |
-| | Macrophages (+2.0%) — inflammatory recruitment |
+| Depleted in COVID+ | p-value | Expanded in COVID+ | p-value |
+|---|---|---|---|
+| Secretory cells (-14.9%) | 0.004 | Squamous cells (+14.1%) — squamous metaplasia | 1.1e-07 |
+| Basal cells (-4.4%) — stem cell depletion | 8.8e-11 | Developing secretory/goblet (+5.4%) — goblet hyperplasia | 5.5e-13 |
+| | | Macrophages (+3.0%) — inflammatory infiltration | 2.7e-06 |
+| | | T cells (+1.5%) — adaptive immune response | 0.001 |
 
 ![Composition](docs/composition_by_condition.png)
 
@@ -49,7 +49,7 @@ The original Lieberman et al. (2020) analysis used CIBERSORTx with a blood-deriv
 2. **Shared gene space**: 19,759 shared genes between reference and bulk → 2,000 HVGs
 3. **Pseudo-bulk generation**: 5,000 synthetic bulk samples created by mixing single cells in random Dirichlet-sampled proportions (500 cells per sample)
 4. **Neural network**: 2-layer feedforward network (2000 → 256 → 128 → 14) with batch normalisation, dropout, and softmax output. Trained with KL divergence loss.
-5. **Validation**: 80/20 train/val split on pseudo-bulk. Pearson r = 0.973 overall, all cell types r > 0.95.
+5. **Validation**: 80/20 train/val split on pseudo-bulk. Pearson r = 0.988, RMSE = 0.016. All cell types r > 0.93.
 6. **Application**: Deconvolve all 484 GSE152075 bulk samples. Compare cell type proportions between COVID+ and negative.
 
 ## Design Decisions
