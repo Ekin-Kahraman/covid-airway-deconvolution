@@ -17,13 +17,23 @@ This project trains a PyTorch neural network on tissue-matched nasopharyngeal si
 
 ### What changes during COVID-19 infection
 
-| Depleted in COVID+ | p-value | Expanded in COVID+ | p-value |
+**Expanded in COVID+ (tissue damage response + immune infiltration):**
+
+| Cell Type | Change | p-value | Interpretation |
 |---|---|---|---|
-| Basal cells (-5.1%) — stem cell depletion | 3.6e-04 | Goblet cells (+5.4%) — mucus overproduction | 2.0e-04 |
-| Developing ciliated (-0.4%) | 9.8e-03 | T cells (+5.1%) — adaptive immune infiltration | 1.5e-06 |
-| | | Macrophages (+1.8%) — inflammatory recruitment | 4.9e-07 |
-| | | Dendritic cells (+0.8%) — antigen presentation | 2.3e-08 |
-| | | Squamous cells (+0.8%) — squamous metaplasia | 1.1e-03 |
+| Goblet cells | +5.4% | 2.0e-04 | Goblet cell hyperplasia — mucus overproduction compensating for lost mucociliary clearance |
+| T cells | +5.1% | 1.5e-06 | Adaptive immune cells infiltrating the nasal epithelium in response to viral antigen |
+| Macrophages | +1.8% | 4.9e-07 | Inflammatory monocyte-derived macrophages recruited to the infection site |
+| Developing secretory/goblet | +1.3% | 1.1e-06 | Progenitor cells differentiating toward the goblet lineage — active tissue remodelling |
+| Dendritic cells | +0.8% | 2.3e-08 | Professional antigen-presenting cells bridging innate and adaptive immunity |
+| Squamous cells | +0.8% | 1.1e-03 | Squamous metaplasia — damaged pseudostratified epithelium replaced by stress-resistant squamous cells |
+
+**Depleted in COVID+ (epithelial damage):**
+
+| Cell Type | Change | p-value | Interpretation |
+|---|---|---|---|
+| Basal cells | -5.1% | 3.6e-04 | Epithelial stem cell depletion — the regenerative layer is damaged, impairing tissue repair |
+| Developing ciliated | -0.4% | 9.8e-03 | Fewer progenitors differentiating toward ciliated fate — consistent with basal cell loss upstream |
 
 ![Composition](docs/composition_by_condition.png)
 
@@ -31,37 +41,41 @@ This project trains a PyTorch neural network on tissue-matched nasopharyngeal si
 
 ### Biological interpretation
 
-The ciliated cell depletion is the central finding. SARS-CoV-2 enters airway cells via ACE2, which is highly expressed on ciliated epithelium. Viral replication kills ciliated cells, impairing mucociliary clearance — the airway's primary defence against pathogens. The compensatory expansion of goblet cells (mucus-producing) and squamous metaplasia (stress-induced tissue remodelling) are well-documented responses to epithelial damage in COVID-19 (Ziegler et al. 2021, Chua et al. 2020).
+The dominant pattern is **epithelial remodelling with immune infiltration**. Basal cells (the epithelial stem cells) are depleted, and the progenitor cells that normally differentiate into ciliated epithelium (developing ciliated cells) are also reduced. The tissue compensates by expanding goblet cells and developing secretory/goblet progenitors — shifting the epithelium from a ciliated, mucociliary-clearing phenotype toward a mucus-secreting phenotype. This is consistent with the mucus hypersecretion and impaired clearance observed clinically in COVID-19 patients.
 
-The immune infiltration (T cells +2.3%, macrophages +2.0%) is consistent with the interferon-stimulated gene signature identified in the [DE analysis](https://github.com/Ekin-Kahraman/bulk-rnaseq-differential-expression). The ISGs detected by DESeq2 are likely produced by these infiltrating immune cells — connecting the bulk DE findings to their cellular source.
+The squamous metaplasia (+0.8%) reflects chronic epithelial stress — pseudostratified columnar epithelium being replaced by squamous cells that are more resistant to damage but less functional.
 
-The original Lieberman et al. (2020) analysis used CIBERSORTx with a blood-derived immune reference (LM22) to estimate immune cell proportions only. This project uses a tissue-matched nasopharyngeal scRNA-seq reference to deconvolve both epithelial AND immune cell types — revealing the epithelial damage that the original analysis could not detect.
+The immune infiltration — T cells (+5.1%), macrophages (+1.8%), dendritic cells (+0.8%) — represents the cellular source of the interferon-stimulated gene signature identified in the [DESeq2 analysis](https://github.com/Ekin-Kahraman/bulk-rnaseq-differential-expression). The 1,773 DE genes (dominated by IFIT1, CXCL10, OAS3) are produced by these infiltrating immune cells, not by the epithelium itself. This connects the bulk transcriptomic findings to their cellular origin.
+
+The original Lieberman et al. (2020) analysis used CIBERSORTx with a blood-derived immune reference (LM22) — a poor match for nasopharyngeal tissue. They estimated immune cell proportions only and could not detect epithelial changes. This project uses a tissue-matched scRNA-seq reference from nasopharyngeal swabs (Ziegler et al. 2021) to deconvolve both epithelial and immune compartments, revealing the epithelial remodelling that the original analysis missed.
 
 ## Data
 
 | Dataset | Source | Description |
 |---|---|---|
-| **Bulk RNA-seq** | [GSE152075](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE152075) (Lieberman et al. 2020) | 484 nasopharyngeal swabs (430 COVID+, 54 negative) |
-| **scRNA-seq reference** | [Ziegler et al. 2021](https://doi.org/10.1016/j.cell.2021.07.023), *Cell* | 32,588 nasopharyngeal cells from 58 participants, tissue-matched |
+| Bulk RNA-seq | [GSE152075](https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE152075) (Lieberman et al. 2020) | 484 nasopharyngeal swabs (430 COVID+, 54 negative) |
+| scRNA-seq reference | [Ziegler et al. 2021](https://doi.org/10.1016/j.cell.2021.07.023), *Cell* | 32,588 nasopharyngeal cells from 58 participants |
 
 ## Method
 
-1. **Load reference**: Ziegler et al. nasopharyngeal scRNA-seq with 14 cell type annotations (3 rare types + erythroblast blood contamination excluded)
-2. **Shared gene space**: 19,759 shared genes between reference and bulk → 2,000 HVGs
-3. **Pseudo-bulk generation**: 5,000 synthetic bulk samples created by mixing single cells in random Dirichlet-sampled proportions (500 cells per sample)
-4. **Neural network**: 2-layer feedforward network (2000 → 256 → 128 → 14) with batch normalisation, dropout, and softmax output. Trained with KL divergence loss.
-5. **Noise augmentation**: Gene dropout (2-8%), library size variation, Gaussian noise applied to pseudo-bulk to simulate real bulk artefacts.
-6. **Validation**: 80/20 train/val split. Pearson r = 0.950, RMSE = 0.033 on noisy pseudo-bulk. Early stopping (patience=20).
-6. **Application**: Deconvolve all 484 GSE152075 bulk samples. Compare cell type proportions between COVID+ and negative.
+1. **Load reference**: Ziegler et al. nasopharyngeal scRNA-seq. 14 cell types retained after excluding 3 rare types (<50 cells: Mast cells, Plasmacytoid DCs, Enteroendocrine cells) and erythroblasts (blood contamination).
+2. **Shared gene space**: 19,759 genes shared between reference and bulk → 2,000 HVGs selected on the reference.
+3. **Pseudo-bulk generation**: 10,000 synthetic bulk samples created by mixing single cells in Dirichlet-sampled proportions weighted by reference prevalence (500 cells per sample).
+4. **Noise augmentation**: Gene dropout (2-8%), library size variation (log-normal), Gaussian noise applied to pseudo-bulk to simulate real bulk technical artefacts.
+5. **Neural network**: 3-layer feedforward network (2000 → 256 → 128 → 14) with batch normalisation, dropout (0.3/0.2), and softmax output. Trained with KL divergence loss, Adam optimiser, ReduceLROnPlateau scheduler.
+6. **Early stopping**: Patience = 20 epochs. Training stopped at epoch 109.
+7. **Validation**: 80/20 train/val split on noisy pseudo-bulk. Pearson r = 0.950, RMSE = 0.033.
+8. **Application**: Deconvolve all 484 GSE152075 bulk samples. Mann-Whitney U test for composition differences between COVID+ and negative.
 
 ## Design Decisions
 
-- **PyTorch over BayesPrism/MuSiC** — builds ML skills while producing comparable results. BayesPrism would be the standard choice; using a neural network demonstrates both the biology and the ML.
-- **Dirichlet pseudo-bulk sampling** — generates diverse composition mixtures spanning the full simplex, not just mixtures near the reference proportions. This forces the model to generalise.
-- **Rare type exclusion (<50 cells)** — Mast cells (9), Plasmacytoid DCs (13), and Enteroendocrine cells (41) excluded because pseudo-bulk training just recycles the same few cells, producing unreliable signatures.
-- **Erythroblast exclusion** — blood contamination from nasal swab collection, not an airway cell type. Including them causes the model to assign 70%+ erythroblast fractions to bulk samples.
-- **KL divergence loss** — appropriate for probability distributions (cell type proportions lie on a simplex). MSE loss does not respect the compositional constraint.
-- **Simple architecture** — with 5,000 training samples and 2,000 features, deeper networks overfit. Two hidden layers with dropout is the right complexity.
+- **PyTorch over BayesPrism/MuSiC** — the standard choice for this problem would be BayesPrism or MuSiC. Using a neural network demonstrates both the biological question and the ML methodology. The approach follows the same pseudo-bulk strategy used by Scaden and digitalDLSorteR.
+- **Dirichlet sampling weighted by reference prevalence** — uniform Dirichlet (alpha=1) gives equal weight to all cell types, which overrepresents rare types in training. Weighting alpha by reference composition generates realistic mixtures where common types (ciliated, 31.9%) dominate and rare types (DCs, 0.5%) appear infrequently.
+- **Noise augmentation** — pseudo-bulk is artificially clean. Real bulk RNA-seq has gene dropout from low-abundance transcripts, library size variation from sequencing depth differences, and technical noise from library preparation. Adding these during training forces the model to learn robust signatures rather than memorising clean patterns.
+- **Rare type exclusion (<50 cells)** — Mast cells (9), Plasmacytoid DCs (13), and Enteroendocrine cells (41) excluded because with fewer than 50 reference cells, pseudo-bulk training recycles the same profiles, producing overfitted and unreliable signatures.
+- **Erythroblast exclusion** — 986 erythroblasts in the reference are blood contamination from nasal swab collection, not airway-resident cells. Including them causes the model to assign 70%+ erythroblast fractions to bulk samples because their transcriptomic signature is distinct from all airway cell types, and the model uses them as a catch-all.
+- **KL divergence loss** — cell type proportions lie on a simplex (non-negative, sum to 1). KL divergence is the natural loss function for comparing probability distributions. MSE treats each proportion independently and does not respect the compositional constraint.
+- **Softmax output clamped before log** — prevents numerical instability when any predicted proportion approaches zero.
 
 ## Quick Start
 
@@ -84,22 +98,23 @@ python deconvolve.py
 ```
 results/
 ├── cell_type_proportions.csv           Per-sample proportions (484 × 14)
-├── mean_proportions_by_condition.csv   COVID+ vs negative comparison
-├── deconvolution_model.pt              Trained PyTorch model
+├── mean_proportions_by_condition.csv   Condition comparison with p-values
+├── deconvolution_model.pt              Trained PyTorch model weights
 └── figures/
-    ├── validation_scatter.png          Predicted vs true (pseudo-bulk)
-    ├── training_loss.png               Training curves
-    ├── composition_by_condition.png    Mean cell type bar charts
+    ├── validation_scatter.png          Predicted vs true per cell type
+    ├── training_loss.png               Training and validation loss curves
+    ├── composition_by_condition.png    Grouped bar chart by condition
     └── boxplots_by_condition.png       Top changing cell types
 ```
 
 ## Limitations
 
-- **Pseudo-bulk training, not real matched samples.** The model is trained on synthetic mixtures, not real bulk samples with known cell type proportions. Validation on real paired bulk + scRNA-seq data would strengthen the results.
-- **B cell proportion is high (~44%).** Nasopharyngeal swabs sample lymphoid tissue (Waldeyer's ring) adjacent to the airway epithelium, which inflates B cell representation. This is a biological property of the sampling site, not a model error.
-- **Single reference dataset.** Ziegler et al. represents one lab, one protocol, one set of patients. A multi-study reference (combining Chua et al., Qi et al.) would improve robustness.
-- **No external validation.** The model has not been tested on an independent bulk NP dataset. Ng et al. (GSE163151) could serve as external validation.
-- **Erythroblasts excluded.** Their presence in the reference (3%) is blood contamination. Excluding them is the correct biological decision but it means the model cannot detect true erythroid infiltration if it occurs.
+- **Pseudo-bulk training, not real matched samples.** The model is trained on synthetic mixtures, not on real bulk samples with experimentally determined cell type proportions. Validation on paired bulk + scRNA-seq from the same patients would be the gold standard.
+- **B cell proportion is high (~40%).** Nasopharyngeal swabs sample the Waldeyer's tonsillar ring — lymphoid tissue adjacent to the airway epithelium — which inflates B cell representation. This is a biological property of the sampling site, not a model error.
+- **Single reference dataset.** Ziegler et al. represents one lab, one sequencing protocol, one patient cohort. A multi-study reference (combining Chua et al., Qi et al., Ng et al.) would improve robustness and reduce lab-specific biases.
+- **No external validation.** The model has not been tested on an independent bulk nasopharyngeal dataset. Ng et al. (GSE163151, n=286) would be a natural validation cohort.
+- **Class imbalance in the bulk data.** 430 COVID+ vs 54 negative. The statistical tests account for this, but the negative group is small.
+- **Erythroblasts excluded.** Correct for this tissue (blood contamination), but prevents detection of genuine erythroid infiltration if it occurs in pathological conditions.
 
 ## References
 
