@@ -218,7 +218,7 @@ def generate_pseudo_bulk(adata_ref, hvg, n_samples=N_PSEUDO_BULK):
 class DeconvNet(nn.Module):
     """Feedforward network for cell type deconvolution.
 
-    Deliberately simple: 2 hidden layers with dropout. With n=5000
+    Deliberately simple: 2 hidden layers with dropout. With n=10000
     training samples and ~2000 gene features, deeper architectures
     overfit without improving accuracy.
     """
@@ -388,7 +388,36 @@ def validate_model(model, X_val, y_val, cell_types):
     fig.tight_layout(rect=[0, 0, 1, 0.98])
     fig.savefig(FIG_DIR / "validation_scatter.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
-    return correlations, overall_r
+    return correlations, overall_r, rmse
+
+
+def run_nnls_baseline(adata_ref, hvg, cell_types, X_val, y_val):
+    """Run non-negative least squares as a linear baseline.
+
+    NNLS finds the proportion vector that minimises ||Ax - b||
+    where A is the cell-type signature matrix (mean expression per type)
+    and b is the bulk sample. No learning — purely algebraic.
+    """
+    X_ref = adata_ref[:, hvg].X
+    if hasattr(X_ref, 'toarray'):
+        X_ref = X_ref.toarray()
+
+    sig_matrix = np.zeros((len(hvg), len(cell_types)))
+    for j, ct in enumerate(cell_types):
+        mask = adata_ref.obs["cell_type"] == ct
+        sig_matrix[:, j] = X_ref[mask.values].mean(axis=0)
+    sig_matrix = np.log2(sig_matrix + 1)
+
+    nnls_pred = np.zeros_like(y_val)
+    for i in range(len(X_val)):
+        sample = X_val[i] * X_val[i].sum()
+        coefs, _ = nnls(sig_matrix, sample)
+        total = coefs.sum()
+        nnls_pred[i] = coefs / total if total > 0 else np.ones(len(cell_types)) / len(cell_types)
+
+    r, _ = pearsonr(y_val.flatten(), nnls_pred.flatten())
+    rmse = np.sqrt(np.mean((y_val - nnls_pred) ** 2))
+    return r, rmse
 
 
 def analyse_results(proportions, cell_types, conditions, sample_ids):
@@ -532,29 +561,10 @@ def main():
     plot_training(train_losses, val_losses)
 
     print("\n--- Validate on pseudo-bulk ---")
-    correlations, overall_r = validate_model(model, X_val, y_val, cell_types)
+    correlations, overall_r, rmse = validate_model(model, X_val, y_val, cell_types)
 
-    # NNLS baseline for comparison
     print("\n--- NNLS baseline ---")
-    nnls_pred = np.zeros_like(y_val)
-    # Build reference signature matrix (mean expression per cell type)
-    X_ref = adata_ref[:, hvg].X
-    if hasattr(X_ref, 'toarray'):
-        X_ref = X_ref.toarray()
-    sig_matrix = np.zeros((len(hvg), len(cell_types)))
-    for j, ct in enumerate(cell_types):
-        mask = adata_ref.obs["cell_type"] == ct
-        sig_matrix[:, j] = X_ref[mask.values].mean(axis=0)
-    sig_matrix = np.log2(sig_matrix + 1)
-
-    for i in range(len(X_val)):
-        sample = X_val[i] * X_val[i].sum()  # un-normalise
-        coefs, _ = nnls(sig_matrix, sample)
-        total = coefs.sum()
-        nnls_pred[i] = coefs / total if total > 0 else np.ones(len(cell_types)) / len(cell_types)
-
-    nnls_r, _ = pearsonr(y_val.flatten(), nnls_pred.flatten())
-    nnls_rmse = np.sqrt(np.mean((y_val - nnls_pred) ** 2))
+    nnls_r, nnls_rmse = run_nnls_baseline(adata_ref, hvg, cell_types, X_val, y_val)
     print(f"  NNLS baseline: r = {nnls_r:.3f}, RMSE = {nnls_rmse:.4f}")
     print(f"  Neural network: r = {overall_r:.3f}, RMSE = {rmse:.4f}")
 
