@@ -63,6 +63,14 @@ The immune infiltration — T cells (+5.1%), macrophages (+1.8%), dendritic cell
 
 The original Lieberman et al. (2020) analysis used CIBERSORTx with a blood-derived immune reference (LM22) — a poor match for nasopharyngeal tissue. They estimated immune cell proportions only and could not detect epithelial changes. This project uses a tissue-matched scRNA-seq reference from nasopharyngeal swabs (Ziegler et al. 2021) to deconvolve both epithelial and immune compartments, revealing the epithelial remodelling that the original analysis missed.
 
+### Viral load correlation
+
+Among 413 COVID+ samples with Ct values, higher viral load (lower Ct) correlates with secretory cell loss (r = -0.160, p = 0.001) — more virus means more epithelial destruction. Ionocytes show the opposite pattern (r = +0.136, p = 0.006), potentially reflecting chemosensory expansion in response to mucosal damage.
+
+### Sex differences
+
+Male COVID+ patients show 1.97% higher macrophage infiltration than females (p = 0.004). This connects to the [12 sex-biased DE genes](https://github.com/Ekin-Kahraman/bulk-rnaseq-differential-expression) found in the bulk analysis — the deconvolution identifies macrophages as a cellular source of sex-differential immune activation. Males have worse COVID outcomes in the literature; greater macrophage infiltration may contribute to the more aggressive inflammatory response observed in male patients.
+
 ## Data
 
 | Dataset | Source | Description |

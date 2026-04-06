@@ -558,6 +558,113 @@ def analyse_results(proportions, cell_types, conditions, sample_ids):
     return prop_df
 
 
+def analyse_covariates(prop_df, cell_types):
+    """Correlate deconvolved proportions with viral load, age, and sex.
+
+    Tests the hypothesis that patients with higher viral load (lower Ct)
+    show more epithelial damage and immune infiltration — connecting the
+    deconvolution findings to the viral load stratification in the
+    bulk RNA-seq DE analysis.
+    """
+    meta_path = DATA_DIR / "sample_metadata.csv"
+    if not meta_path.exists():
+        print("  No metadata file found, skipping covariate analysis")
+        return
+
+    meta = pd.read_csv(meta_path)
+    merged = prop_df.copy()
+    merged["sample_id"] = merged.index
+    merged = merged.merge(meta, on="sample_id", how="left")
+
+    FIG_DIR.mkdir(parents=True, exist_ok=True)
+
+    # --- Viral load correlation (COVID+ samples only) ---
+    pos_with_ct = merged[(merged["condition"] == "positive") & (merged["ct_value"].notna())]
+    print(f"  COVID+ samples with Ct values: {len(pos_with_ct)}")
+
+    ct_correlations = {}
+    for ct in cell_types:
+        r, p = pearsonr(pos_with_ct["ct_value"], pos_with_ct[ct])
+        ct_correlations[ct] = {"r": r, "p": p}
+
+    # Sort by absolute correlation
+    ct_corr_df = pd.DataFrame(ct_correlations).T
+    ct_corr_df = ct_corr_df.sort_values("r")
+
+    print("  Cell type ~ viral load (Ct) correlations:")
+    for ct, row in ct_corr_df.iterrows():
+        sig = "*" if row["p"] < 0.05 else ""
+        # Negative r = higher proportion with lower Ct (more virus)
+        print(f"    {ct}: r = {row['r']:.3f} (p = {row['p']:.2e}) {sig}")
+
+    ct_corr_df.to_csv(RESULTS_DIR / "viral_load_correlations.csv")
+
+    # Plot top correlations
+    top_ct = ct_corr_df.loc[ct_corr_df["p"] < 0.05]
+    if len(top_ct) > 0:
+        n_sig = len(top_ct)
+        cols = min(4, n_sig)
+        rows_n = (n_sig + cols - 1) // cols
+        fig, axes = plt.subplots(rows_n, cols, figsize=(4 * cols, 3.5 * rows_n))
+        if n_sig == 1:
+            axes = [axes]
+        else:
+            axes = np.atleast_2d(axes).flatten()
+
+        for i, (ct_name, row) in enumerate(top_ct.iterrows()):
+            if i >= len(axes):
+                break
+            axes[i].scatter(pos_with_ct["ct_value"], pos_with_ct[ct_name],
+                          s=8, alpha=0.3, color="#1976D2")
+            z = np.polyfit(pos_with_ct["ct_value"], pos_with_ct[ct_name], 1)
+            x_line = np.linspace(pos_with_ct["ct_value"].min(), pos_with_ct["ct_value"].max(), 100)
+            axes[i].plot(x_line, np.polyval(z, x_line), "r-", linewidth=2, alpha=0.7)
+            axes[i].set_xlabel("N1 Ct value (low = more virus)")
+            axes[i].set_ylabel("Proportion")
+            axes[i].set_title(f"{ct_name}\nr={row['r']:.3f}, p={row['p']:.1e}", fontsize=9)
+
+        for j in range(n_sig, len(axes)):
+            axes[j].set_visible(False)
+
+        fig.suptitle("Cell Type Proportions vs Viral Load", fontsize=12)
+        fig.tight_layout()
+        fig.savefig(FIG_DIR / "viral_load_correlation.png", dpi=200, bbox_inches="tight")
+        plt.close(fig)
+        print(f"  Saved viral load correlation plot ({n_sig} significant)")
+
+    # --- Sex differences in cell composition (COVID+ only) ---
+    pos_with_sex = merged[
+        (merged["condition"] == "positive") & (merged["sex"].isin(["M", "F"]))
+    ]
+    n_m = (pos_with_sex["sex"] == "M").sum()
+    n_f = (pos_with_sex["sex"] == "F").sum()
+    print(f"\n  Sex analysis: {n_m} male, {n_f} female (COVID+ only)")
+
+    sex_results = {}
+    for ct in cell_types:
+        male = pos_with_sex.loc[pos_with_sex["sex"] == "M", ct]
+        female = pos_with_sex.loc[pos_with_sex["sex"] == "F", ct]
+        _, p = mannwhitneyu(male, female, alternative="two-sided")
+        sex_results[ct] = {
+            "male_mean": male.mean(),
+            "female_mean": female.mean(),
+            "diff": male.mean() - female.mean(),
+            "p_value": p,
+        }
+
+    sex_df = pd.DataFrame(sex_results).T.sort_values("p_value")
+    sex_df.to_csv(RESULTS_DIR / "sex_differences.csv")
+
+    sig_sex = sex_df[sex_df["p_value"] < 0.05]
+    if len(sig_sex) > 0:
+        print("  Significant sex differences:")
+        for ct, row in sig_sex.iterrows():
+            direction = "M > F" if row["diff"] > 0 else "F > M"
+            print(f"    {ct}: {direction}, diff = {row['diff']*100:.2f}%, p = {row['p_value']:.2e}")
+    else:
+        print("  No significant sex differences in cell composition (p < 0.05)")
+
+
 def main():
     print("=" * 60)
     print("COVID-19 Airway Cell Type Deconvolution")
@@ -626,9 +733,13 @@ def main():
     proportions = deconvolve_bulk(model, bulk_counts, hvg)
 
     print("\n--- Analyse results ---")
-    analyse_results(proportions, cell_types, conditions, bulk_counts.columns)
+    prop_df = analyse_results(proportions, cell_types, conditions, bulk_counts.columns)
 
     torch.save(model.state_dict(), RESULTS_DIR / "deconvolution_model.pt")
+
+    # Viral load and sex correlation analysis
+    print("\n--- Clinical covariate analysis ---")
+    analyse_covariates(prop_df, cell_types)
 
     print("\n" + "=" * 60)
     print(f"Complete. Validation r = {overall_r:.3f}")
