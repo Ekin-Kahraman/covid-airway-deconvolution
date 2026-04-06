@@ -12,7 +12,7 @@ This project trains a PyTorch neural network on tissue-matched nasopharyngeal si
 
 ## Results
 
-**Validation Pearson r = 0.950, RMSE = 0.033** on held-out pseudo-bulk with noise augmentation. This is an upper bound — pseudo-bulk validation systematically overestimates real-bulk performance because it does not capture batch effects or library preparation artefacts ([BAL benchmark, 2026](https://www.biorxiv.org/content/10.64898/2026.01.14.699304v1.full)). 14 cell types deconvolved across 484 patients. 10 show statistically significant composition changes between COVID+ and negative (Mann-Whitney U, p < 0.05).
+**5-fold CV Pearson r = 0.954 +/- 0.001, RMSE = 0.032** on noisy pseudo-bulk. This is an upper bound — pseudo-bulk validation systematically overestimates real-bulk performance because it does not capture batch effects or library preparation artefacts ([BAL benchmark, 2026](https://www.biorxiv.org/content/10.64898/2026.01.14.699304v1.full)). 14 cell types deconvolved across 484 patients. 10 show statistically significant composition changes between COVID+ and negative (Mann-Whitney U, p < 0.05).
 
 Per-cell-type validation (held-out pseudo-bulk): Squamous r=0.978, Ciliated r=0.977, T Cells r=0.975, Macrophages r=0.974, Basal r=0.972, Goblet r=0.967, Secretory r=0.965, Ionocytes r=0.961, Developing Ciliated r=0.957, Deuterosomal r=0.956, Dendritic r=0.955, Mitotic Basal r=0.943, Developing Secretory/Goblet r=0.937, B Cells r=0.936.
 
@@ -76,15 +76,17 @@ The original Lieberman et al. (2020) analysis used CIBERSORTx with a blood-deriv
 2. **Shared gene space**: 19,759 genes shared between reference and bulk → 2,000 HVGs selected on the reference.
 3. **Pseudo-bulk generation**: 10,000 synthetic bulk samples created by mixing single cells in Dirichlet-sampled proportions weighted by reference prevalence (500 cells per sample).
 4. **Noise augmentation**: Gene dropout (2-8%), library size variation (log-normal), Gaussian noise applied to pseudo-bulk to simulate real bulk technical artefacts.
-5. **Neural network**: 3-layer feedforward network (2000 → 256 → 128 → 14) with batch normalisation, dropout (0.3/0.2), and softmax output. Trained with KL divergence loss, Adam optimiser, ReduceLROnPlateau scheduler.
-6. **Baseline comparison**: Non-negative least squares (NNLS) on the same validation data. Neural network r=0.950 vs NNLS r=0.609 — the learned model substantially outperforms the linear baseline.
+5. **Ensemble neural network**: Three feedforward sub-networks (hidden dims 128, 256, 512) with averaged predictions — following the Scaden ensemble strategy (Menden et al. 2020). Each sub-network: BatchNorm, ReLU, Dropout, softmax output. Trained with KL divergence loss, Adam optimiser.
+6. **5-fold cross-validation**: r = 0.954 +/- 0.001 across folds — stable, no fold-dependent variance.
+7. **Baseline comparison**: Non-negative least squares (NNLS) r = 0.609 on the same data. Ensemble NN outperforms the linear baseline by 57%.
 6. **Early stopping**: Patience = 20 epochs. Training stopped at epoch 109.
-7. **Validation**: 80/20 train/val split on noisy pseudo-bulk. Pearson r = 0.950, RMSE = 0.033.
+8. **Validation**: 5-fold CV (r = 0.954 +/- 0.001) + final 80/20 split (r = 0.954, RMSE = 0.031).
 8. **Application**: Deconvolve all 484 GSE152075 bulk samples. Mann-Whitney U test for composition differences between COVID+ and negative.
 
 ## Design Decisions
 
-- **PyTorch over BayesPrism/MuSiC** — the standard choice for this problem would be BayesPrism or MuSiC. Using a neural network demonstrates both the biological question and the ML methodology. The approach follows the same pseudo-bulk strategy used by Scaden and digitalDLSorteR.
+- **Ensemble of 3 networks over a single DNN** — averaging predictions from sub-networks with different capacities (128/256/512 hidden dim) reduces variance without increasing bias. Same strategy as Scaden (Menden et al. 2020, Science Advances). 5-fold CV variance is +/- 0.001, confirming stability.
+- **PyTorch over BayesPrism/MuSiC** — the standard choice for this problem would be BayesPrism or MuSiC. Using a neural network demonstrates both the biological question and the ML methodology.
 - **Dirichlet sampling weighted by reference prevalence** — uniform Dirichlet (alpha=1) gives equal weight to all cell types, which overrepresents rare types in training. Weighting alpha by reference composition generates realistic mixtures where common types (ciliated, 31.9%) dominate and rare types (DCs, 0.5%) appear infrequently.
 - **Noise augmentation** — pseudo-bulk is artificially clean. Real bulk RNA-seq has gene dropout from low-abundance transcripts, library size variation from sequencing depth differences, and technical noise from library preparation. Adding these during training forces the model to learn robust signatures rather than memorising clean patterns.
 - **Rare type exclusion (<50 cells)** — Mast cells (9), Plasmacytoid DCs (13), and Enteroendocrine cells (41) excluded because with fewer than 50 reference cells, pseudo-bulk training recycles the same profiles, producing overfitted and unreliable signatures.

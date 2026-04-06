@@ -20,7 +20,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 import matplotlib.pyplot as plt
 from pathlib import Path
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, KFold
 from scipy.stats import pearsonr, mannwhitneyu
 from scipy.optimize import nnls
 
@@ -218,9 +218,9 @@ def generate_pseudo_bulk(adata_ref, hvg, n_samples=N_PSEUDO_BULK):
 class DeconvNet(nn.Module):
     """Feedforward network for cell type deconvolution.
 
-    Deliberately simple: 2 hidden layers with dropout. With n=10000
-    training samples and ~2000 gene features, deeper architectures
-    overfit without improving accuracy.
+    Two hidden layers with batch normalisation and dropout.
+    With n=10000 training samples and ~2000 gene features,
+    deeper architectures overfit without improving accuracy.
     """
     def __init__(self, n_genes, n_types, hidden_dim=HIDDEN_DIM):
         super().__init__()
@@ -241,10 +241,35 @@ class DeconvNet(nn.Module):
         return torch.softmax(logits, dim=1)
 
 
+class EnsembleDeconvNet(nn.Module):
+    """Ensemble of multiple DeconvNets with different hidden dimensions.
+
+    Averaging predictions across architectures reduces variance and
+    improves robustness — the same strategy used by Scaden
+    (Menden et al. 2020, Science Advances). Each sub-network sees the
+    same data but learns slightly different representations due to
+    different capacity and random initialisation.
+    """
+    def __init__(self, n_genes, n_types, hidden_dims=(128, 256, 512)):
+        super().__init__()
+        self.models = nn.ModuleList([
+            DeconvNet(n_genes, n_types, hidden_dim=h) for h in hidden_dims
+        ])
+
+    def forward(self, x):
+        preds = torch.stack([m(x) for m in self.models], dim=0)
+        return preds.mean(dim=0)
+
+
 def train_model(X_train, y_train, X_val, y_val, n_types):
-    """Train the deconvolution neural network."""
+    """Train an ensemble of deconvolution networks.
+
+    Three sub-networks with hidden dimensions 128, 256, 512 are trained
+    jointly. Predictions are averaged at inference — reducing variance
+    without increasing bias. This follows the Scaden ensemble strategy.
+    """
     n_genes = X_train.shape[1]
-    model = DeconvNet(n_genes, n_types)
+    model = EnsembleDeconvNet(n_genes, n_types, hidden_dims=(128, 256, 512))
 
     X_tr = torch.FloatTensor(X_train)
     y_tr = torch.FloatTensor(y_train)
@@ -550,23 +575,52 @@ def main():
     print("\n--- Generate pseudo-bulk training data ---")
     X_pseudo, y_pseudo, cell_types = generate_pseudo_bulk(adata_ref, hvg)
 
+    # 5-fold cross-validation for robust performance estimate
+    print("\n--- 5-fold cross-validation ---")
+    kf = KFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
+    fold_rs = []
+    fold_rmses = []
+
+    for fold_i, (train_idx, val_idx) in enumerate(kf.split(X_pseudo)):
+        X_tr_fold, X_val_fold = X_pseudo[train_idx], X_pseudo[val_idx]
+        y_tr_fold, y_val_fold = y_pseudo[train_idx], y_pseudo[val_idx]
+
+        fold_model, _, _ = train_model(
+            X_tr_fold, y_tr_fold, X_val_fold, y_val_fold, n_types=len(cell_types)
+        )
+        fold_model.eval()
+        with torch.no_grad():
+            fold_pred = fold_model(torch.FloatTensor(X_val_fold)).numpy()
+        r, _ = pearsonr(y_val_fold.flatten(), fold_pred.flatten())
+        fold_rmse = np.sqrt(np.mean((y_val_fold - fold_pred) ** 2))
+        fold_rs.append(r)
+        fold_rmses.append(fold_rmse)
+        print(f"  Fold {fold_i+1}: r = {r:.3f}, RMSE = {fold_rmse:.4f}")
+
+    mean_r = np.mean(fold_rs)
+    std_r = np.std(fold_rs)
+    mean_rmse = np.mean(fold_rmses)
+    print(f"  Mean: r = {mean_r:.3f} +/- {std_r:.3f}, RMSE = {mean_rmse:.4f}")
+
+    # Train final model on 80/20 split for deployment
     X_train, X_val, y_train, y_val = train_test_split(
         X_pseudo, y_pseudo, test_size=0.2, random_state=RANDOM_STATE
     )
 
-    print("\n--- Train neural network ---")
+    print("\n--- Train final ensemble ---")
     model, train_losses, val_losses = train_model(
         X_train, y_train, X_val, y_val, n_types=len(cell_types)
     )
     plot_training(train_losses, val_losses)
 
-    print("\n--- Validate on pseudo-bulk ---")
+    print("\n--- Validate final model ---")
     correlations, overall_r, rmse = validate_model(model, X_val, y_val, cell_types)
 
     print("\n--- NNLS baseline ---")
     nnls_r, nnls_rmse = run_nnls_baseline(adata_ref, hvg, cell_types, X_val, y_val)
     print(f"  NNLS baseline: r = {nnls_r:.3f}, RMSE = {nnls_rmse:.4f}")
-    print(f"  Neural network: r = {overall_r:.3f}, RMSE = {rmse:.4f}")
+    print(f"  Ensemble NN:   r = {overall_r:.3f}, RMSE = {rmse:.4f}")
+    print(f"  5-fold CV:     r = {mean_r:.3f} +/- {std_r:.3f}")
 
     print("\n--- Deconvolve GSE152075 ---")
     proportions = deconvolve_bulk(model, bulk_counts, hvg)
