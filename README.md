@@ -138,7 +138,7 @@ results/
 - **Pseudo-bulk training, not real matched samples.** The model is trained on synthetic mixtures, not on real bulk samples with experimentally determined cell type proportions. Validation on paired bulk + scRNA-seq from the same patients would be the gold standard.
 - **B cell proportion is high (~40%).** Nasopharyngeal swabs sample the Waldeyer's tonsillar ring — lymphoid tissue adjacent to the airway epithelium — which inflates B cell representation. This is a biological property of the sampling site, not a model error.
 - **Single reference dataset.** Ziegler et al. represents one lab, one sequencing protocol, one patient cohort. A multi-study reference (combining Chua et al., Qi et al., Ng et al.) would improve robustness and reduce lab-specific biases.
-- **No external validation.** The model has not been tested on an independent bulk nasopharyngeal dataset. Ng et al. (GSE163151, n=286) would be a natural validation cohort.
+- **Partial external validation.** Applied to GSE163151 (Ng et al. 2021, 404 NP samples). Direction concordance 57% (8/14 cell types): T cell infiltration, macrophage recruitment, squamous expansion, and developing ciliated depletion replicate. Goblet hyperplasia and B cell changes do not. Effect size correlation r=0.057. The model partially generalises but does not cleanly replicate, likely due to cohort differences and gene space mismatch.
 - **Class imbalance in the bulk data.** 430 COVID+ vs 54 negative. The statistical tests account for this, but the negative group is small.
 - **Erythroblasts excluded.** Correct for this tissue (blood contamination), but prevents detection of genuine erythroid infiltration if it occurs in pathological conditions.
 
