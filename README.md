@@ -148,6 +148,7 @@ results/
 - Ziegler CGK et al. (2021) *Impaired local intrinsic immunity to SARS-CoV-2 infection in severe COVID-19.* Cell. [DOI: 10.1016/j.cell.2021.07.023](https://doi.org/10.1016/j.cell.2021.07.023)
 - Chua RL et al. (2020) *COVID-19 severity correlates with airway epithelium-immune cell interactions.* Nature Biotechnology. [DOI: 10.1038/s41587-020-0602-4](https://doi.org/10.1038/s41587-020-0602-4)
 - Hu Y et al. (2026) *Real-paired single-cell/bulk RNA-seq benchmark and a practical protocol for accurate cell-type deconvolution in human BAL samples.* bioRxiv. [DOI: 10.64898/2026.01.14.699304](https://www.biorxiv.org/content/10.64898/2026.01.14.699304v1)
+- Ng DL et al. (2021) *A diagnostic host response biosignature for COVID-19 from RNA profiling of nasal swabs and blood.* Science Advances. [DOI: 10.1126/sciadv.abe5984](https://doi.org/10.1126/sciadv.abe5984)
 
 ## Licence
 
