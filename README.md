@@ -8,11 +8,11 @@ Which cell types in the nasopharyngeal airway drive the host transcriptional res
 
 Bulk RNA-seq averages expression across all cells in a sample — it detects 1,773 differentially expressed genes during COVID infection ([bulk-rnaseq-differential-expression](https://github.com/Ekin-Kahraman/bulk-rnaseq-differential-expression)) but cannot tell you whether those genes are activated in ciliated epithelial cells, infiltrating immune cells, or goblet cells expanding in response to damage.
 
-This project trains a PyTorch neural network on tissue-matched nasopharyngeal single-cell data to decompose 484 bulk COVID samples into their cellular components — something [nobody has done for this dataset](https://pubmed.ncbi.nlm.nih.gov/?term=GSE152075+deconvolution).
+This project trains a PyTorch deconvolution model on tissue-matched nasopharyngeal single-cell data to decompose 484 bulk COVID samples into their cellular components.
 
 ## Results
 
-**5-fold CV Pearson r = 0.954 +/- 0.001, RMSE = 0.032** on noisy pseudo-bulk. This is an upper bound — pseudo-bulk validation systematically overestimates real-bulk performance because it does not capture batch effects or library preparation artefacts ([Hu et al. 2026](https://www.biorxiv.org/content/10.64898/2026.01.14.699304v1)). 14 cell types deconvolved across 484 patients. 10 show statistically significant composition changes between COVID+ and negative (Mann-Whitney U, p < 0.05).
+**5-fold CV Pearson r = 0.954 +/- 0.001, RMSE = 0.032** on noisy pseudo-bulk. This is an upper bound — pseudo-bulk validation systematically overestimates real-bulk performance because it does not capture batch effects or library preparation artefacts ([Hu et al. 2026](https://www.biorxiv.org/content/10.64898/2026.01.14.699304v1)). 14 cell types deconvolved across 484 patients. 11 show statistically significant composition changes between COVID+ and negative (Mann-Whitney U, p < 0.05).
 
 Per-cell-type validation (held-out pseudo-bulk): Squamous r=0.978, Ciliated r=0.977, T Cells r=0.975, Macrophages r=0.974, Basal r=0.972, Goblet r=0.967, Secretory r=0.965, Ionocytes r=0.961, Developing Ciliated r=0.957, Deuterosomal r=0.956, Dendritic r=0.955, Mitotic Basal r=0.943, Developing Secretory/Goblet r=0.937, B Cells r=0.936.
 
@@ -24,23 +24,24 @@ Per-cell-type validation (held-out pseudo-bulk): Squamous r=0.978, Ciliated r=0.
 
 | Cell Type | Change | p-value | Interpretation |
 |---|---|---|---|
-| Goblet cells | +5.4% | 2.0e-04 | Goblet cell hyperplasia — mucus overproduction compensating for lost mucociliary clearance |
-| T cells | +5.1% | 1.5e-06 | Adaptive immune cells infiltrating the nasal epithelium in response to viral antigen |
-| Macrophages | +1.8% | 4.9e-07 | Inflammatory monocyte-derived macrophages recruited to the infection site |
-| Developing secretory/goblet | +1.3% | 1.1e-06 | Progenitor cells differentiating toward the goblet lineage — active tissue remodelling |
-| Dendritic cells | +0.8% | 2.3e-08 | Professional antigen-presenting cells bridging innate and adaptive immunity |
-| Squamous cells | +0.8% | 1.1e-03 | Squamous metaplasia — damaged pseudostratified epithelium replaced by stress-resistant squamous cells |
-| Ionocytes | +0.2% | 4.7e-02 | Rare chemosensory cells — modest expansion may reflect mucosal irritation signalling |
-| Mitotic basal cells | +0.1% | 2.8e-02 | Proliferating basal cells — residual stem cells entering cell cycle to compensate for epithelial loss |
+| T cells | +5.0% | 7.8e-07 | Adaptive immune cells infiltrating the nasal epithelium in response to viral antigen |
+| Developing secretory/goblet | +4.6% | 5.1e-12 | Progenitor cells differentiating toward the goblet lineage — active tissue remodelling |
+| Goblet cells | +4.2% | 1.5e-03 | Goblet cell hyperplasia — mucus overproduction compensating for lost mucociliary clearance |
+| Macrophages | +1.6% | 4.4e-07 | Inflammatory monocyte-derived macrophages recruited to the infection site |
+| Dendritic cells | +1.5% | 3.7e-08 | Professional antigen-presenting cells bridging innate and adaptive immunity |
+| Mitotic basal cells | +0.3% | 3.6e-04 | Proliferating basal cells — residual stem cells entering cell cycle to compensate for epithelial loss |
+| Ionocytes | +0.1% | 3.2e-02 | Rare epithelial cells — modest expansion may reflect mucosal irritation signalling |
+| Deuterosomal cells | +0.1% | 4.9e-02 | Multiciliated-cell precursors; small effect near the significance threshold |
 
 **Depleted in COVID+ (epithelial damage):**
 
 | Cell Type | Change | p-value | Interpretation |
 |---|---|---|---|
-| Basal cells | -5.1% | 3.6e-04 | Epithelial stem cell depletion — the regenerative layer is damaged, impairing tissue repair |
-| Developing ciliated | -0.4% | 9.8e-03 | Fewer progenitors differentiating toward ciliated fate — consistent with basal cell loss upstream |
+| Ciliated cells | -7.8% | 1.4e-02 | Loss of differentiated ciliated epithelium, consistent with impaired mucociliary clearance |
+| Basal cells | -4.6% | 3.2e-06 | Epithelial stem cell depletion — the regenerative layer is damaged, impairing tissue repair |
+| B cells | -0.7% | 9.6e-03 | Small but significant decrease in the deconvolved bulk proportions |
 
-**Not significantly changed:** Ciliated cells (-2.1%, p=0.64), Secretory cells (-7.0%, p=0.09), B cells (-0.8%, p=0.27), Deuterosomal cells (+0.05%, p=0.10). The absence of significant ciliated cell depletion despite known ACE2-mediated viral entry may reflect the limitations of the pseudo-bulk training approach, or that ciliated cell loss is heterogeneous across patients and does not reach significance with n=54 negative controls.
+**Not significantly changed:** Squamous cells (+0.1%, p=0.136), Developing ciliated cells (-0.5%, p=0.533), Secretory cells (-3.8%, p=0.323). These non-significant calls are kept explicit because pseudo-bulk deconvolution can be sensitive to the reference cohort and to the negative-control sample size (n=54).
 
 ![Difference](docs/composition_difference.png)
 
@@ -55,17 +56,17 @@ Per-cell-type validation (held-out pseudo-bulk): Squamous r=0.978, Ciliated r=0.
 
 ### Biological interpretation
 
-The dominant pattern is **epithelial remodelling with immune infiltration**. Basal cells (the epithelial stem cells) are depleted, and the progenitor cells that normally differentiate into ciliated epithelium (developing ciliated cells) are also reduced. The tissue compensates by expanding goblet cells and developing secretory/goblet progenitors — shifting the epithelium from a ciliated, mucociliary-clearing phenotype toward a mucus-secreting phenotype. This is consistent with the mucus hypersecretion and impaired clearance observed clinically in COVID-19 patients.
+The dominant pattern is **epithelial remodelling with immune infiltration**. Ciliated and basal cells are depleted, while goblet-lineage and developing secretory/goblet cells increase. The inferred shift is from a ciliated, mucociliary-clearing phenotype toward a mucus-secreting and inflamed epithelial state. This is consistent with mucus hypersecretion and impaired clearance observed clinically in COVID-19 patients.
 
-The squamous metaplasia (+0.8%) reflects chronic epithelial stress — pseudostratified columnar epithelium being replaced by squamous cells that are more resistant to damage but less functional.
+Squamous cells trend slightly upward but are not significant in this run, so the data do not support a strong squamous-metaplasia claim.
 
-The immune infiltration — T cells (+5.1%), macrophages (+1.8%), dendritic cells (+0.8%) — represents the cellular source of the interferon-stimulated gene signature identified in the [DESeq2 analysis](https://github.com/Ekin-Kahraman/bulk-rnaseq-differential-expression). The 1,773 DE genes (dominated by IFIT1, CXCL10, OAS3) are produced by these infiltrating immune cells, not by the epithelium itself. This connects the bulk transcriptomic findings to their cellular origin.
+The immune infiltration — T cells (+5.0%), macrophages (+1.6%), dendritic cells (+1.5%) — provides a plausible cellular context for the interferon-stimulated gene signature identified in the [DESeq2 analysis](https://github.com/Ekin-Kahraman/bulk-rnaseq-differential-expression). The deconvolution does not prove which cells express each DE gene, but it links the bulk transcriptomic shift to changing epithelial and immune-cell composition.
 
 The original Lieberman et al. (2020) analysis used CIBERSORTx with a blood-derived immune reference (LM22) — a poor match for nasopharyngeal tissue. They estimated immune cell proportions only and could not detect epithelial changes. This project uses a tissue-matched scRNA-seq reference from nasopharyngeal swabs (Ziegler et al. 2021) to deconvolve both epithelial and immune compartments, revealing the epithelial remodelling that the original analysis missed.
 
 ### Viral load correlation
 
-Among 413 COVID+ samples with Ct values, higher viral load (lower Ct) correlates with secretory cell loss (r = -0.160, p = 0.001) — more virus means more epithelial destruction. Ionocytes show the opposite pattern (r = +0.136, p = 0.006), potentially reflecting chemosensory expansion in response to mucosal damage.
+Among 413 COVID+ samples with Ct values, secretory-cell proportion is negatively correlated with N1 Ct (r = -0.160, p = 0.001), while ionocytes are positively correlated with N1 Ct (r = +0.136, p = 0.006). Because lower Ct means higher viral load, these are Ct correlations rather than direct mechanistic proof of viral-load-driven cell loss.
 
 ### Sex differences
 
