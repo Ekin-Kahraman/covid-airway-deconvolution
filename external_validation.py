@@ -7,6 +7,8 @@ the training dataset.
 GSE163151: 404 NP samples — 145 COVID-19, 31 controls, 140 other viral, 82 non-viral, 6 bacterial.
 """
 
+import json
+
 import numpy as np
 import pandas as pd
 import scanpy as sc
@@ -17,6 +19,8 @@ from scipy.stats import mannwhitneyu
 
 RESULTS_DIR = Path("results/external_validation")
 DATA_DIR = Path("data/gse163151")
+MODEL_PATH = Path("results/deconvolution_model.pt")
+MODEL_METADATA_PATH = Path("results/model_metadata.json")
 
 CELL_TYPES = [
     "B Cells", "Basal Cells", "Ciliated Cells", "Dendritic Cells",
@@ -72,8 +76,8 @@ def get_hvg_list():
         ["nan", "Unknown", "Doublet", "unassigned", ""]
     )]
 
-    # Get shared genes with the new bulk data
-    new_bulk = pd.read_csv(DATA_DIR / "count_matrix.csv", index_col=0, nrows=0)
+    # Get shared genes with the new bulk data without loading the full matrix.
+    new_bulk = pd.read_csv(DATA_DIR / "count_matrix.csv", index_col=0, usecols=[0])
     ref_genes = set(adata_ref.var_names)
     bulk_genes = set(new_bulk.index)
     shared = sorted(ref_genes & bulk_genes)
@@ -101,10 +105,34 @@ def deconvolve(model, counts, hvg):
     row_sums[row_sums == 0] = 1
     X = X / row_sums
 
-    model.set_mode("eval")
+    model.eval()
     with torch.no_grad():
         pred = model(torch.FloatTensor(X)).numpy()
     return pred
+
+
+def load_model_bundle():
+    """Load model weights plus the saved gene and cell-type contract."""
+    if MODEL_METADATA_PATH.exists():
+        metadata = json.loads(MODEL_METADATA_PATH.read_text())
+        hvg = metadata["hvg"]
+        cell_types = metadata["cell_types"]
+        hidden_dims = tuple(metadata.get("model", {}).get("hidden_dims", [128, 256, 512]))
+        n_genes = len(hvg)
+        n_types = len(cell_types)
+    else:
+        print("No model_metadata.json found; falling back to derived HVGs and hard-coded cell types.")
+        hvg = get_hvg_list()
+        cell_types = CELL_TYPES
+        hidden_dims = (128, 256, 512)
+        n_genes = 2000
+        n_types = len(CELL_TYPES)
+
+    model = EnsembleDeconvNet(n_genes, n_types, hidden_dims=hidden_dims)
+    state = torch.load(MODEL_PATH, map_location="cpu", weights_only=True)
+    model.load_state_dict(state)
+    model.eval()
+    return model, hvg, cell_types
 
 
 def main():
@@ -112,13 +140,7 @@ def main():
 
     # Load model
     print("Loading trained model...")
-    model = EnsembleDeconvNet(2000, 14, hidden_dims=(128, 256, 512))
-    state = torch.load("results/deconvolution_model.pt", map_location="cpu", weights_only=True)
-    model.load_state_dict(state)
-    model.eval()
-
-    # Get HVG list
-    hvg = get_hvg_list()
+    model, hvg, cell_types = load_model_bundle()
 
     # Load new data
     print("\nLoading GSE163151 count matrix...")
@@ -142,7 +164,7 @@ def main():
     with torch.no_grad():
         proportions = model(torch.FloatTensor(X)).numpy()
 
-    prop_df = pd.DataFrame(proportions, columns=CELL_TYPES)
+    prop_df = pd.DataFrame(proportions, columns=cell_types)
     prop_df["condition"] = meta["disease state"].values
     prop_df["pathogen"] = meta["pathogen"].values
     prop_df.index = counts.columns
@@ -156,7 +178,7 @@ def main():
     print(f"  COVID: n={len(covid)}, Controls: n={len(control)}")
 
     comparison = []
-    for ct in CELL_TYPES:
+    for ct in cell_types:
         diff = covid[ct].mean() - control[ct].mean()
         _, pval = mannwhitneyu(covid[ct], control[ct], alternative="two-sided")
         sig = "***" if pval < 0.001 else "**" if pval < 0.01 else "*" if pval < 0.05 else ""
@@ -174,14 +196,14 @@ def main():
     print("\n=== Cross-Cohort Concordance (GSE163151 vs GSE152075) ===")
     orig_props = pd.read_csv("results/cell_type_proportions.csv", index_col=0)
     if "condition" in orig_props.columns:
-        orig_covid = orig_props[orig_props["condition"] == "positive"][CELL_TYPES].mean()
-        orig_control = orig_props[orig_props["condition"] == "negative"][CELL_TYPES].mean()
+        orig_covid = orig_props[orig_props["condition"] == "positive"][cell_types].mean()
+        orig_control = orig_props[orig_props["condition"] == "negative"][cell_types].mean()
         orig_diff = orig_covid - orig_control
 
-        new_diff = covid[CELL_TYPES].mean() - control[CELL_TYPES].mean()
+        new_diff = covid[cell_types].mean() - control[cell_types].mean()
 
-        concordant = sum(1 for ct in CELL_TYPES if np.sign(orig_diff[ct]) == np.sign(new_diff[ct]))
-        print(f"  Direction concordance: {concordant}/{len(CELL_TYPES)} ({concordant/len(CELL_TYPES)*100:.0f}%)")
+        concordant = sum(1 for ct in cell_types if np.sign(orig_diff[ct]) == np.sign(new_diff[ct]))
+        print(f"  Direction concordance: {concordant}/{len(cell_types)} ({concordant/len(cell_types)*100:.0f}%)")
 
         from scipy.stats import pearsonr
         r, p = pearsonr(orig_diff.values, new_diff.values)

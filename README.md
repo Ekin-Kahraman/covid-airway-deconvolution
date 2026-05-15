@@ -10,6 +10,13 @@ Bulk RNA-seq averages expression across all cells in a sample — it detects 1,7
 
 This project trains a PyTorch deconvolution model on tissue-matched nasopharyngeal single-cell data to decompose 484 bulk COVID samples into their cellular components.
 
+## Production Readiness
+
+- Synthetic smoke tests in GitHub Actions cover pseudo-bulk generation, neural-network simplex output, statistical summaries, plots, and model metadata.
+- Trained weights are paired with `results/model_metadata.json`, which records the HVG list, cell-type order, architecture, validation metrics, cross-validation metrics, and NNLS baseline.
+- External validation now loads that metadata instead of relying on a hard-coded gene/cell-type contract.
+- The public README keeps pseudo-bulk and external-validation limitations explicit, so the biological claims are not overstated.
+
 ## Results
 
 **5-fold CV Pearson r = 0.954 +/- 0.001, RMSE = 0.032** on noisy pseudo-bulk. This is an upper bound — pseudo-bulk validation systematically overestimates real-bulk performance because it does not capture batch effects or library preparation artefacts ([Hu et al. 2026](https://www.biorxiv.org/content/10.64898/2026.01.14.699304v1)). 14 cell types deconvolved across 484 patients. 11 show statistically significant composition changes between COVID+ and negative (Mann-Whitney U, p < 0.05).
@@ -126,6 +133,7 @@ results/
 ├── cell_type_proportions.csv           Per-sample proportions (484 × 14)
 ├── mean_proportions_by_condition.csv   Condition comparison with p-values
 ├── deconvolution_model.pt              Trained PyTorch model weights
+├── model_metadata.json                 HVGs, cell types, architecture, metrics
 └── figures/
     ├── validation_scatter.png          Predicted vs true per cell type
     ├── training_loss.png               Training and validation loss curves

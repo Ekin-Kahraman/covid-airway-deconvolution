@@ -12,6 +12,8 @@ tissue dominated by epithelial cells. This project uses a tissue-matched
 scRNA-seq reference to deconvolve BOTH epithelial and immune cell types.
 """
 
+import json
+
 import numpy as np
 import pandas as pd
 import scanpy as sc
@@ -558,6 +560,65 @@ def analyse_results(proportions, cell_types, conditions, sample_ids):
     return prop_df
 
 
+def save_model_metadata(
+    cell_types,
+    hvg,
+    correlations,
+    overall_r,
+    rmse,
+    mean_r,
+    std_r,
+    mean_rmse,
+    nnls_r,
+    nnls_rmse,
+):
+    """Save the model contract needed to reuse trained weights."""
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    metadata = {
+        "model": {
+            "type": "EnsembleDeconvNet",
+            "hidden_dims": [128, 256, 512],
+            "n_genes": len(hvg),
+            "n_cell_types": len(cell_types),
+        },
+        "training": {
+            "random_state": RANDOM_STATE,
+            "n_pseudo_bulk": N_PSEUDO_BULK,
+            "cells_per_sample": CELLS_PER_SAMPLE,
+            "n_top_genes": N_TOP_GENES,
+            "learning_rate": LEARNING_RATE,
+            "max_epochs": EPOCHS,
+        },
+        "validation": {
+            "pearson_r": float(overall_r),
+            "rmse": float(rmse),
+            "per_cell_type": {
+                ct: {
+                    "pearson_r": float(vals["r"]),
+                    "p_value": float(vals["p"]),
+                }
+                for ct, vals in correlations.items()
+            },
+        },
+        "cross_validation": {
+            "pearson_r_mean": float(mean_r),
+            "pearson_r_std": float(std_r),
+            "rmse_mean": float(mean_rmse),
+        },
+        "baseline": {
+            "method": "NNLS",
+            "pearson_r": float(nnls_r),
+            "rmse": float(nnls_rmse),
+        },
+        "cell_types": list(cell_types),
+        "hvg": list(hvg),
+    }
+    path = RESULTS_DIR / "model_metadata.json"
+    path.write_text(json.dumps(metadata, indent=2) + "\n")
+    print(f"  Model metadata saved to {path}")
+    return metadata
+
+
 def analyse_covariates(prop_df, cell_types):
     """Correlate deconvolved proportions with viral load, age, and sex.
 
@@ -736,6 +797,18 @@ def main():
     prop_df = analyse_results(proportions, cell_types, conditions, bulk_counts.columns)
 
     torch.save(model.state_dict(), RESULTS_DIR / "deconvolution_model.pt")
+    save_model_metadata(
+        cell_types,
+        hvg,
+        correlations,
+        overall_r,
+        rmse,
+        mean_r,
+        std_r,
+        mean_rmse,
+        nnls_r,
+        nnls_rmse,
+    )
 
     # Viral load and sex correlation analysis
     print("\n--- Clinical covariate analysis ---")
