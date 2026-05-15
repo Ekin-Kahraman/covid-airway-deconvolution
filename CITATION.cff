@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use this repository, please cite it and the underlying public datasets."
+title: "COVID-19 Airway Cell-Type Deconvolution"
+type: software
+license: MIT
+repository-code: "https://github.com/Ekin-Kahraman/covid-airway-deconvolution"
+url: "https://github.com/Ekin-Kahraman/covid-airway-deconvolution"
+abstract: "A PyTorch deconvolution workflow estimating airway cell-type composition in COVID-19 nasopharyngeal bulk RNA-seq using a tissue-matched single-cell reference and pseudo-bulk validation."
+keywords:
+  - bioinformatics
+  - deconvolution
+  - RNA-seq
+  - single-cell RNA-seq
+  - COVID-19
+  - PyTorch
+authors:
+  - family-names: "Kahraman"
+    given-names: "Ekin"
+    affiliation: "University of East Anglia"
+    email: "evk23umu@uea.ac.uk"
+references:
+  - type: article
+    title: "In vivo antiviral host transcriptional response to SARS-CoV-2 by viral load, sex, and age"
+    doi: "10.1371/journal.pbio.3000849"
+  - type: article
+    title: "Impaired local intrinsic immunity to SARS-CoV-2 infection in severe COVID-19"
+    doi: "10.1016/j.cell.2021.07.023"
