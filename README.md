@@ -15,11 +15,14 @@ This project trains a PyTorch deconvolution model on tissue-matched nasopharynge
 - Synthetic smoke tests in GitHub Actions cover pseudo-bulk generation, neural-network simplex output, statistical summaries, plots, and model metadata.
 - Trained weights are paired with `results/model_metadata.json`, which records the HVG list, cell-type order, architecture, validation metrics, cross-validation metrics, and NNLS baseline.
 - External validation now loads that metadata instead of relying on a hard-coded gene/cell-type contract.
+- Cell-type composition tests now report both Mann-Whitney p-values and Benjamini-Hochberg q-values across the tested cell types.
 - The public README keeps pseudo-bulk and external-validation limitations explicit, so the biological claims are not overstated.
+
+See [`docs/VALIDATION.md`](docs/VALIDATION.md) for the validation ladder, baseline comparison, and current adoption caveats.
 
 ## Results
 
-**5-fold CV Pearson r = 0.954 +/- 0.001, RMSE = 0.032** on noisy pseudo-bulk. This is an upper bound — pseudo-bulk validation systematically overestimates real-bulk performance because it does not capture batch effects or library preparation artefacts ([Hu et al. 2026](https://www.biorxiv.org/content/10.64898/2026.01.14.699304v1)). 14 cell types deconvolved across 484 patients. 11 show statistically significant composition changes between COVID+ and negative (Mann-Whitney U, p < 0.05).
+**5-fold CV Pearson r = 0.954 +/- 0.001, RMSE = 0.032** on noisy pseudo-bulk. This is an upper bound — pseudo-bulk validation systematically overestimates real-bulk performance because it does not capture batch effects or library preparation artefacts ([Hu et al. 2026](https://www.biorxiv.org/content/10.64898/2026.01.14.699304v1)). 14 cell types deconvolved across 484 patients. Composition tests are Mann-Whitney U with Benjamini-Hochberg q-values across cell types; 10/14 cell types remain significant at q < 0.05.
 
 Per-cell-type validation (held-out pseudo-bulk): Squamous r=0.978, Ciliated r=0.977, T Cells r=0.975, Macrophages r=0.974, Basal r=0.972, Goblet r=0.967, Secretory r=0.965, Ionocytes r=0.961, Developing Ciliated r=0.957, Deuterosomal r=0.956, Dendritic r=0.955, Mitotic Basal r=0.943, Developing Secretory/Goblet r=0.937, B Cells r=0.936.
 
@@ -29,26 +32,25 @@ Per-cell-type validation (held-out pseudo-bulk): Squamous r=0.978, Ciliated r=0.
 
 **Expanded in COVID+ (tissue damage response + immune infiltration):**
 
-| Cell Type | Change | p-value | Interpretation |
-|---|---|---|---|
-| T cells | +5.0% | 7.8e-07 | Adaptive immune cells infiltrating the nasal epithelium in response to viral antigen |
-| Developing secretory/goblet | +4.6% | 5.1e-12 | Progenitor cells differentiating toward the goblet lineage — active tissue remodelling |
-| Goblet cells | +4.2% | 1.5e-03 | Goblet cell hyperplasia — mucus overproduction compensating for lost mucociliary clearance |
-| Macrophages | +1.6% | 4.4e-07 | Inflammatory monocyte-derived macrophages recruited to the infection site |
-| Dendritic cells | +1.5% | 3.7e-08 | Professional antigen-presenting cells bridging innate and adaptive immunity |
-| Mitotic basal cells | +0.3% | 3.6e-04 | Proliferating basal cells — residual stem cells entering cell cycle to compensate for epithelial loss |
-| Ionocytes | +0.1% | 3.2e-02 | Rare epithelial cells — modest expansion may reflect mucosal irritation signalling |
-| Deuterosomal cells | +0.1% | 4.9e-02 | Multiciliated-cell precursors; small effect near the significance threshold |
+| Cell Type | Change | p-value | q-value | Interpretation |
+|---|---:|---:|---:|---|
+| T cells | +5.0% | 7.8e-07 | 2.7e-06 | Adaptive immune cells infiltrating the nasal epithelium in response to viral antigen |
+| Developing secretory/goblet | +4.6% | 5.1e-12 | 7.1e-11 | Progenitor cells differentiating toward the goblet lineage; active tissue remodelling |
+| Goblet cells | +4.2% | 1.5e-03 | 3.0e-03 | Goblet cell hyperplasia; mucus overproduction compensating for lost mucociliary clearance |
+| Macrophages | +1.6% | 4.4e-07 | 2.1e-06 | Inflammatory monocyte-derived macrophages recruited to the infection site |
+| Dendritic cells | +1.5% | 3.7e-08 | 2.6e-07 | Professional antigen-presenting cells bridging innate and adaptive immunity |
+| Mitotic basal cells | +0.3% | 3.6e-04 | 8.4e-04 | Proliferating basal cells; residual stem cells entering cell cycle to compensate for epithelial loss |
+| Ionocytes | +0.1% | 3.2e-02 | 4.5e-02 | Rare epithelial cells; modest expansion may reflect mucosal irritation signalling |
 
 **Depleted in COVID+ (epithelial damage):**
 
-| Cell Type | Change | p-value | Interpretation |
-|---|---|---|---|
-| Ciliated cells | -7.8% | 1.4e-02 | Loss of differentiated ciliated epithelium, consistent with impaired mucociliary clearance |
-| Basal cells | -4.6% | 3.2e-06 | Epithelial stem cell depletion — the regenerative layer is damaged, impairing tissue repair |
-| B cells | -0.7% | 9.6e-03 | Small but significant decrease in the deconvolved bulk proportions |
+| Cell Type | Change | p-value | q-value | Interpretation |
+|---|---:|---:|---:|---|
+| Ciliated cells | -7.8% | 1.4e-02 | 2.2e-02 | Loss of differentiated ciliated epithelium, consistent with impaired mucociliary clearance |
+| Basal cells | -4.6% | 3.2e-06 | 9.0e-06 | Epithelial stem cell depletion; the regenerative layer is damaged, impairing tissue repair |
+| B cells | -0.7% | 9.6e-03 | 1.7e-02 | Small but significant decrease in the deconvolved bulk proportions |
 
-**Not significantly changed:** Squamous cells (+0.1%, p=0.136), Developing ciliated cells (-0.5%, p=0.533), Secretory cells (-3.8%, p=0.323). These non-significant calls are kept explicit because pseudo-bulk deconvolution can be sensitive to the reference cohort and to the negative-control sample size (n=54).
+**Not FDR-significant:** Deuterosomal cells (+0.1%, p=0.049, q=0.062), Squamous cells (+0.1%, p=0.136, q=0.159), Developing ciliated cells (-0.5%, p=0.533, q=0.533), Secretory cells (-3.8%, p=0.323, q=0.348). These non-significant calls are kept explicit because pseudo-bulk deconvolution can be sensitive to the reference cohort and to the negative-control sample size (n=54).
 
 ![Difference](docs/composition_difference.png)
 

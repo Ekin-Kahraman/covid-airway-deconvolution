@@ -447,6 +447,46 @@ def run_nnls_baseline(adata_ref, hvg, cell_types, X_val, y_val):
     return r, rmse
 
 
+def benjamini_hochberg(p_values):
+    """Return Benjamini-Hochberg FDR-adjusted q-values in original order."""
+    p_values = np.asarray(p_values, dtype=float)
+    n = len(p_values)
+    if n == 0:
+        return np.array([], dtype=float)
+
+    order = np.argsort(p_values)
+    ranked = p_values[order]
+    adjusted = ranked * n / (np.arange(n) + 1)
+    adjusted = np.minimum.accumulate(adjusted[::-1])[::-1]
+    adjusted = np.clip(adjusted, 0, 1)
+
+    q_values = np.empty_like(adjusted)
+    q_values[order] = adjusted
+    return q_values
+
+
+def condition_comparison_summary(prop_df, cell_types):
+    """Summarise COVID-positive vs negative cell-type proportion shifts."""
+    summary = prop_df.groupby("condition")[cell_types].mean().T
+    if "positive" not in summary.columns or "negative" not in summary.columns:
+        return summary
+
+    summary["diff"] = summary["positive"] - summary["negative"]
+
+    pvals = []
+    for ct in cell_types:
+        neg = prop_df.loc[prop_df["condition"] == "negative", ct]
+        pos = prop_df.loc[prop_df["condition"] == "positive", ct]
+        _, p = mannwhitneyu(neg, pos, alternative="two-sided")
+        pvals.append(p)
+
+    qvals = benjamini_hochberg(pvals)
+    summary["p_value"] = pd.Series(pvals, index=cell_types)
+    summary["q_value"] = pd.Series(qvals, index=cell_types)
+    summary["significant"] = summary["q_value"] < 0.05
+    return summary.sort_values("diff", ascending=False)
+
+
 def analyse_results(proportions, cell_types, conditions, sample_ids):
     """Analyse and visualise deconvolution results."""
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -455,10 +495,14 @@ def analyse_results(proportions, cell_types, conditions, sample_ids):
     prop_df = pd.DataFrame(proportions, columns=cell_types, index=sample_ids)
     prop_df["condition"] = conditions.values
     prop_df.to_csv(RESULTS_DIR / "cell_type_proportions.csv")
+    summary = condition_comparison_summary(prop_df, cell_types)
+    summary.to_csv(RESULTS_DIR / "mean_proportions_by_condition.csv")
 
     # Grouped bar chart — side by side comparison
     neg_means = prop_df.loc[prop_df["condition"] == "negative", cell_types].mean()
     pos_means = prop_df.loc[prop_df["condition"] == "positive", cell_types].mean()
+    neg_n = int((prop_df["condition"] == "negative").sum())
+    pos_n = int((prop_df["condition"] == "positive").sum())
 
     # Sort by absolute difference
     order = (pos_means - neg_means).abs().sort_values(ascending=True).index
@@ -469,9 +513,9 @@ def analyse_results(proportions, cell_types, conditions, sample_ids):
     height = 0.35
 
     fig, ax = plt.subplots(figsize=(10, 8))
-    ax.barh(y - height/2, neg_sorted.values, height, label=f"Negative (n=54)",
+    ax.barh(y - height/2, neg_sorted.values, height, label=f"Negative (n={neg_n})",
             color="#2196F3", alpha=0.85)
-    ax.barh(y + height/2, pos_sorted.values, height, label=f"Positive (n=430)",
+    ax.barh(y + height/2, pos_sorted.values, height, label=f"Positive (n={pos_n})",
             color="#E53935", alpha=0.85)
     ax.set_yticks(y)
     ax.set_yticklabels(order, fontsize=9)
@@ -488,13 +532,11 @@ def analyse_results(proportions, cell_types, conditions, sample_ids):
     diff_sorted = diff.sort_values()
     colours = ["#E53935" if d > 0 else "#2196F3" for d in diff_sorted.values]
 
-    # Run Mann-Whitney for significance markers
+    # Mark BH-FDR significant changes.
     sig_markers = []
     for ct in diff_sorted.index:
-        neg = prop_df.loc[prop_df["condition"] == "negative", ct]
-        pos = prop_df.loc[prop_df["condition"] == "positive", ct]
-        _, p = mannwhitneyu(neg, pos, alternative="two-sided")
-        sig_markers.append("*" if p < 0.05 else "")
+        sig = bool(summary.loc[ct, "significant"]) if "significant" in summary.columns else False
+        sig_markers.append("*" if sig else "")
 
     fig, ax = plt.subplots(figsize=(10, 7))
     bars = ax.barh(range(len(diff_sorted)), diff_sorted.values, color=colours, alpha=0.85)
@@ -503,7 +545,7 @@ def analyse_results(proportions, cell_types, conditions, sample_ids):
     ax.set_yticklabels(labels, fontsize=9)
     ax.axvline(0, color="black", linewidth=0.8)
     ax.set_xlabel("Proportion difference (COVID+ minus Negative)")
-    ax.set_title("Cell Type Composition Change in COVID-19\n* = significant (Mann-Whitney p < 0.05)", fontsize=12)
+    ax.set_title("Cell Type Composition Change in COVID-19\n* = significant (BH-FDR q < 0.05)", fontsize=12)
     ax.grid(True, alpha=0.1, axis="x")
     fig.tight_layout()
     fig.savefig(FIG_DIR / "composition_difference.png", dpi=200, bbox_inches="tight")
@@ -538,23 +580,6 @@ def analyse_results(proportions, cell_types, conditions, sample_ids):
     fig.tight_layout()
     fig.savefig(FIG_DIR / "boxplots_by_condition.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
-
-    # Summary with statistical tests
-    summary = prop_df.groupby("condition")[cell_types].mean().T
-    if "positive" in summary.columns and "negative" in summary.columns:
-        summary["diff"] = summary["positive"] - summary["negative"]
-
-        # Mann-Whitney U test for each cell type
-        pvals = {}
-        for ct in cell_types:
-            neg = prop_df.loc[prop_df["condition"] == "negative", ct]
-            pos = prop_df.loc[prop_df["condition"] == "positive", ct]
-            _, p = mannwhitneyu(neg, pos, alternative="two-sided")
-            pvals[ct] = p
-        summary["p_value"] = pd.Series(pvals)
-        summary["significant"] = summary["p_value"] < 0.05
-        summary = summary.sort_values("diff", ascending=False)
-    summary.to_csv(RESULTS_DIR / "mean_proportions_by_condition.csv")
 
     print(f"\n  Results saved to {RESULTS_DIR}/")
     return prop_df

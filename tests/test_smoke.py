@@ -76,6 +76,17 @@ def test_analyse_results_writes_expected_outputs(tmp_path, monkeypatch):
     assert (tmp_path / "figures" / "composition_by_condition.png").exists()
     assert (tmp_path / "figures" / "boxplots_by_condition.png").exists()
 
+    summary = pd.read_csv(tmp_path / "mean_proportions_by_condition.csv", index_col=0)
+    assert {"p_value", "q_value", "significant"}.issubset(summary.columns)
+    assert summary["q_value"].between(0, 1).all()
+
+
+def test_benjamini_hochberg_adjusts_in_original_order():
+    q = deconvolve.benjamini_hochberg([0.001, 0.02, 0.04, 0.20])
+
+    np.testing.assert_allclose(q, [0.004, 0.04, 0.0533333333, 0.20])
+    assert np.all(q >= np.array([0.001, 0.02, 0.04, 0.20]))
+
 
 def test_model_metadata_records_reuse_contract(tmp_path, monkeypatch):
     monkeypatch.setattr(deconvolve, "RESULTS_DIR", tmp_path)
