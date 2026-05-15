@@ -1,11 +1,16 @@
 import json
+import importlib.util
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import scanpy as sc
 import torch
 
-import deconvolve
+ROOT = Path(__file__).resolve().parents[1]
+SPEC = importlib.util.spec_from_file_location("deconvolve", ROOT / "deconvolve.py")
+deconvolve = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(deconvolve)
 
 
 def make_reference():
