@@ -1,54 +1,64 @@
-# COVID-19 Airway Cell Type Deconvolution
+# Estimating airway cell-type proportions in COVID-19
 
 [![CI](https://github.com/Ekin-Kahraman/covid-airway-deconvolution/actions/workflows/ci.yml/badge.svg)](https://github.com/Ekin-Kahraman/covid-airway-deconvolution/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](https://www.python.org/)
 
-Which cell types in the nasopharyngeal airway drive the host transcriptional response to SARS-CoV-2?
+How does the estimated balance of epithelial and immune cells differ between
+COVID-positive and negative nasal-swab samples?
 
-Bulk RNA-seq averages expression across all cells in a sample - it detects 1,773 differentially expressed genes during COVID infection ([bulk-rnaseq-differential-expression](https://github.com/Ekin-Kahraman/bulk-rnaseq-differential-expression)) but cannot tell you whether those genes are activated in ciliated epithelial cells, infiltrating immune cells, or goblet cells expanding in response to damage.
+This project uses a single-cell airway reference to estimate the proportions
+of **14 cell types in 484 bulk RNA-seq samples**. This approach, called
+deconvolution, complements the [gene-expression analysis](https://github.com/Ekin-Kahraman/bulk-rnaseq-differential-expression).
+The proportions are model estimates, not direct cell counts.
 
-This project trains a PyTorch deconvolution model on tissue-matched nasopharyngeal single-cell data to decompose 484 bulk COVID samples into their cellular components.
+## Validation and reproducibility
 
-## Engineering Evidence
+- Validation on simulated cell mixtures gives a cross-validation correlation of **0.954**; this is not measured accuracy on the 484 real samples.
+- In an external cohort, 8 of 14 estimated changes agree in direction, but effect-size correlation is only **0.057**. Generalisation remains limited.
+- Saved model metadata records the input genes, cell types, settings and validation results needed for reuse.
+- Automated tests cover mixture generation, valid proportions, statistical summaries and figures. Group comparisons include multiple-testing correction.
 
-- Synthetic smoke tests in GitHub Actions cover pseudo-bulk generation, neural-network simplex output, statistical summaries, plots, and model metadata.
-- Trained weights are paired with `results/model_metadata.json`, which records the HVG list, cell-type order, architecture, validation metrics, cross-validation metrics, and NNLS baseline.
-- External validation now loads that metadata instead of relying on a hard-coded gene/cell-type contract.
-- Cell-type composition tests now report both Mann-Whitney p-values and Benjamini-Hochberg q-values across the tested cell types.
-- Pseudo-bulk and external-validation limitations are explicit, so the biological claims are not overstated.
-
-See [`docs/VALIDATION.md`](docs/VALIDATION.md) for the validation ladder, baseline comparison, and current adoption caveats.
+See [`docs/VALIDATION.md`](docs/VALIDATION.md) for the tests, baseline comparison and limitations.
 
 ## Results
 
-**5-fold CV Pearson r = 0.954 +/- 0.001, RMSE = 0.032** on noisy pseudo-bulk. This is an upper bound - pseudo-bulk validation systematically overestimates real-bulk performance because it does not capture batch effects or library preparation artefacts ([Hu et al. 2026](https://www.biorxiv.org/content/10.64898/2026.01.14.699304v1)). 14 cell types deconvolved across 484 patients. Composition tests are Mann-Whitney U with Benjamini-Hochberg q-values across cell types; 10/14 cell types remain significant at q < 0.05.
+**Five-fold cross-validation: Pearson r = 0.954 +/- 0.001, RMSE = 0.032** on
+noisy simulated mixtures (pseudo-bulk). These tests may be optimistic because
+simulation cannot reproduce every difference between real samples and the
+reference. On the model-estimated proportions, 10 of 14 cell types meet q < 0.05
+in COVID-positive versus negative comparisons; this does not validate the
+proportions against experimental cell counts.
 
-Per-cell-type validation (held-out pseudo-bulk): Squamous r=0.978, Ciliated r=0.977, T Cells r=0.975, Macrophages r=0.974, Basal r=0.972, Goblet r=0.967, Secretory r=0.965, Ionocytes r=0.961, Developing Ciliated r=0.957, Deuterosomal r=0.956, Dendritic r=0.955, Mitotic Basal r=0.943, Developing Secretory/Goblet r=0.937, B Cells r=0.936.
+Per-cell-type correlations on held-out simulated mixtures range from 0.936 to
+0.978. The figure below shows predicted versus known proportions in that test.
 
 ![Validation](docs/validation_scatter.png)
 
-### What changes during COVID-19 infection
+### Estimated differences by COVID-19 status
 
-**Expanded in COVID+ (tissue damage response + immune infiltration):**
+**Higher estimated proportions in COVID-positive samples:**
 
-| Cell Type | Change | p-value | q-value | Interpretation |
+Changes below are absolute percentage points, not relative percentage changes.
+The interpretation column describes hypotheses, not directly observed mechanisms.
+
+| Cell Type | Change (percentage points) | p-value | q-value | Interpretation |
 |---|---:|---:|---:|---|
-| T cells | +5.0% | 7.8e-07 | 2.7e-06 | Adaptive immune cells infiltrating the nasal epithelium in response to viral antigen |
-| Developing secretory/goblet | +4.6% | 5.1e-12 | 7.1e-11 | Progenitor cells differentiating toward the goblet lineage; active tissue remodelling |
-| Goblet cells | +4.2% | 1.5e-03 | 3.0e-03 | Goblet cell hyperplasia; mucus overproduction compensating for lost mucociliary clearance |
-| Macrophages | +1.6% | 4.4e-07 | 2.1e-06 | Inflammatory monocyte-derived macrophages recruited to the infection site |
-| Dendritic cells | +1.5% | 3.7e-08 | 2.6e-07 | Professional antigen-presenting cells bridging innate and adaptive immunity |
-| Mitotic basal cells | +0.3% | 3.6e-04 | 8.4e-04 | Proliferating basal cells; residual stem cells entering cell cycle to compensate for epithelial loss |
-| Ionocytes | +0.1% | 3.2e-02 | 4.5e-02 | Rare epithelial cells; modest expansion may reflect mucosal irritation signalling |
+| T cells | +5.0 | 7.8e-07 | 2.7e-06 | Higher estimated T-cell representation |
+| Developing secretory/goblet | +4.6 | 5.1e-12 | 7.1e-11 | Higher estimated secretory/goblet-lineage representation |
+| Goblet cells | +4.2 | 1.5e-03 | 3.0e-03 | Possible change in mucus-associated cell composition |
+| Macrophages | +1.6 | 4.4e-07 | 2.1e-06 | Higher estimated macrophage representation |
+| Dendritic cells | +1.5 | 3.7e-08 | 2.6e-07 | Higher estimated antigen-presenting-cell representation |
+| Mitotic basal cells | +0.3 | 3.6e-04 | 8.4e-04 | Possible change in proliferating basal-cell representation |
+| Ionocytes | +0.1 | 3.2e-02 | 4.5e-02 | Small estimated change in a rare cell type |
 
-**Depleted in COVID+ (epithelial damage):**
+**Lower estimated proportions in COVID-positive samples:**
 
-| Cell Type | Change | p-value | q-value | Interpretation |
+| Cell Type | Change (percentage points) | p-value | q-value | Interpretation |
 |---|---:|---:|---:|---|
-| Ciliated cells | -7.8% | 1.4e-02 | 2.2e-02 | Loss of differentiated ciliated epithelium, consistent with impaired mucociliary clearance |
-| Basal cells | -4.6% | 3.2e-06 | 9.0e-06 | Epithelial stem cell depletion; the regenerative layer is damaged, impairing tissue repair |
-| B cells | -0.7% | 9.6e-03 | 1.7e-02 | Small but significant decrease in the deconvolved bulk proportions |
+| Ciliated cells | -7.8 | 1.4e-02 | 2.2e-02 | Lower estimated ciliated-cell representation |
+| Basal cells | -4.6 | 3.2e-06 | 9.0e-06 | Lower estimated basal-cell representation |
+| B cells | -0.7 | 9.6e-03 | 1.7e-02 | Small but significant decrease in the deconvolved bulk proportions |
 
 **Not FDR-significant:** Deuterosomal cells (+0.1%, p=0.049, q=0.062), Squamous cells (+0.1%, p=0.136, q=0.159), Developing ciliated cells (-0.5%, p=0.533, q=0.533), Secretory cells (-3.8%, p=0.323, q=0.348). These non-significant calls are kept explicit because pseudo-bulk deconvolution can be sensitive to the reference cohort and to the negative-control sample size (n=54).
 
@@ -65,13 +75,21 @@ Per-cell-type validation (held-out pseudo-bulk): Squamous r=0.978, Ciliated r=0.
 
 ### Biological interpretation
 
-The dominant pattern is **epithelial remodelling with immune infiltration**. Ciliated and basal cells are depleted, while goblet-lineage and developing secretory/goblet cells increase. The inferred shift is from a ciliated, mucociliary-clearing phenotype toward a mucus-secreting and inflamed epithelial state. This is consistent with mucus hypersecretion and impaired clearance observed clinically in COVID-19 patients.
+The estimates suggest differences in epithelial and immune-cell composition:
+lower ciliated/basal-cell proportions and higher T-cell, macrophage and
+secretory/goblet-lineage proportions. Direct measurements would be needed to
+confirm cell loss, infiltration, tissue damage or altered mucus production.
 
 Squamous cells trend slightly upward but are not significant in this run, so the data do not support a strong squamous-metaplasia claim.
 
-The immune infiltration - T cells (+5.0%), macrophages (+1.6%), dendritic cells (+1.5%) - provides a plausible cellular context for the interferon-stimulated gene signature identified in the [DESeq2 analysis](https://github.com/Ekin-Kahraman/bulk-rnaseq-differential-expression). The deconvolution does not prove which cells express each DE gene, but it links the bulk transcriptomic shift to changing epithelial and immune-cell composition.
+These estimated composition differences provide hypotheses for interpreting the
+interferon-associated signature in the [DESeq2 analysis](https://github.com/Ekin-Kahraman/bulk-rnaseq-differential-expression).
+They do not identify which cells produced each expression change.
 
-The original Lieberman et al. (2020) analysis used CIBERSORTx with a blood-derived immune reference (LM22) - a poor match for nasopharyngeal tissue. They estimated immune cell proportions only and could not detect epithelial changes. This project uses a tissue-matched scRNA-seq reference from nasopharyngeal swabs (Ziegler et al. 2021) to deconvolve both epithelial and immune compartments, revealing the epithelial remodelling that the original analysis missed.
+The airway reference includes both epithelial and immune cells, allowing a
+broader set of candidate cell types than an immune-only reference. This is a
+choice of biological scope, not a demonstrated accuracy advantage over CIBERSORTx
+or other established methods.
 
 ### Viral load correlation
 
@@ -79,7 +97,10 @@ Among 413 COVID+ samples with Ct values, secretory-cell proportion is negatively
 
 ### Sex differences
 
-Male COVID+ patients show 1.97% higher macrophage infiltration than females (p = 0.004). This connects to the [12 sex-biased DE genes](https://github.com/Ekin-Kahraman/bulk-rnaseq-differential-expression) found in the bulk analysis - the deconvolution identifies macrophages as a cellular source of sex-differential immune activation. Males have worse COVID outcomes in the literature; greater macrophage infiltration may contribute to the more aggressive inflammatory response observed in male patients.
+The exploratory comparison reports a 1.97-percentage-point higher estimated
+macrophage proportion in male COVID-positive samples (p = 0.004). It does not
+establish macrophage infiltration, the cellular source of sex-associated gene
+expression, or differences in clinical risk.
 
 ## Data
 
@@ -96,20 +117,20 @@ Male COVID+ patients show 1.97% higher macrophage infiltration than females (p =
 4. **Noise augmentation**: Gene dropout (2-8%), library size variation (log-normal), Gaussian noise applied to pseudo-bulk to simulate real bulk technical artefacts.
 5. **Ensemble neural network**: Three feedforward sub-networks (hidden dims 128, 256, 512) with averaged predictions - following the Scaden ensemble strategy (Menden et al. 2020). Each sub-network: BatchNorm, ReLU, Dropout, softmax output. Trained with KL divergence loss, Adam optimiser (lr=1e-3, weight_decay=1e-5), ReduceLROnPlateau scheduler (patience=10, factor=0.5).
 6. **Early stopping**: Patience = 20 epochs. Training stopped at epoch 109.
-7. **5-fold cross-validation**: r = 0.954 +/- 0.001 across folds - stable, no fold-dependent variance.
-8. **Baseline comparison**: Non-negative least squares (NNLS) r = 0.609 on the same data. Ensemble NN outperforms the linear baseline by 57%.
+7. **5-fold cross-validation**: r = 0.954 +/- 0.001 across simulated-mixture folds; low observed variation, not independent-donor validation.
+8. **Baseline comparison**: Non-negative least squares (NNLS) r = 0.609 on the same data. The neural model has higher correlation on this simulated-mixture test; a percentage increase in correlation is not a percentage gain in accuracy.
 9. **Validation**: Final 80/20 split (r = 0.954, RMSE = 0.031).
 10. **Application**: Deconvolve all 484 GSE152075 bulk samples. Mann-Whitney U test for composition differences between COVID+ and negative.
 
 ## Design Decisions
 
-- **Ensemble of 3 networks over a single DNN** - averaging predictions from sub-networks with different capacities (128/256/512 hidden dim) reduces variance without increasing bias. Same strategy as Scaden (Menden et al. 2020, Science Advances). 5-fold CV variance is +/- 0.001, confirming stability.
-- **PyTorch over BayesPrism/MuSiC** - the standard choice for this problem would be BayesPrism or MuSiC. Using a neural network demonstrates both the biological question and the ML methodology.
-- **Dirichlet sampling weighted by reference prevalence** - uniform Dirichlet (alpha=1) gives equal weight to all cell types, which overrepresents rare types in training. Weighting alpha by reference composition generates realistic mixtures where common types (ciliated, 31.9%) dominate and rare types (DCs, 0.5%) appear infrequently.
-- **Noise augmentation** - pseudo-bulk is artificially clean. Real bulk RNA-seq has gene dropout from low-abundance transcripts, library size variation from sequencing depth differences, and technical noise from library preparation. Adding these during training forces the model to learn robust signatures rather than memorising clean patterns.
+- **Three-network ensemble** - average models with different capacities, following Scaden's approach, to reduce sensitivity to one architecture. The observed fold variation is small; this does not guarantee lower bias or better external performance.
+- **PyTorch implementation** - supports the neural mixture model and custom training experiments. Comparisons with BayesPrism, MuSiC and other established methods remain future work.
+- **Dirichlet sampling weighted by reference prevalence** - uniform Dirichlet (alpha=1) gives equal weight to all cell types, which overrepresents rare types in training. Weighting by reference composition makes common reference cell types more frequent in training mixtures. This is an assumption about plausible mixtures, not validation of real sample composition.
+- **Noise augmentation** - pseudo-bulk is artificially clean. Real bulk RNA-seq has gene dropout from low-abundance transcripts, library size variation from sequencing depth differences, and technical noise from library preparation. Adding noise tests a wider range of inputs, but cannot guarantee robustness to real technical or biological differences.
 - **Rare type exclusion (<50 cells)** - Mast cells (9), Plasmacytoid DCs (13), and Enteroendocrine cells (41) excluded because with fewer than 50 reference cells, pseudo-bulk training recycles the same profiles, producing overfitted and unreliable signatures.
-- **Erythroblast exclusion** - 986 erythroblasts in the reference are blood contamination from nasal swab collection, not airway-resident cells. Including them causes the model to assign 70%+ erythroblast fractions to bulk samples because their transcriptomic signature is distinct from all airway cell types, and the model uses them as a catch-all.
-- **KL divergence loss** - cell type proportions lie on a simplex (non-negative, sum to 1). KL divergence is the natural loss function for comparing probability distributions. MSE treats each proportion independently and does not respect the compositional constraint.
+- **Erythroblast exclusion** - 986 reference erythroblasts were excluded to focus the model on airway epithelial and immune cells. This restricts what the model can predict; it does not establish whether blood-derived contributions are absent from every bulk sample.
+- **Proportion loss and output constraints** - KL divergence compares predicted and known mixture proportions. The softmax output, rather than the loss alone, makes predictions non-negative and sum to one.
 - **Softmax output clamped before log** - prevents numerical instability when any predicted proportion approaches zero.
 
 ## Quick Start
@@ -147,11 +168,11 @@ results/
 ## Limitations
 
 - **Pseudo-bulk training, not real matched samples.** The model is trained on synthetic mixtures, not on real bulk samples with experimentally determined cell type proportions. Validation on paired bulk + scRNA-seq from the same patients would be the gold standard.
-- **B cell proportion is high (~40%).** Nasopharyngeal swabs sample the Waldeyer's tonsillar ring - lymphoid tissue adjacent to the airway epithelium - which inflates B cell representation. This is a biological property of the sampling site, not a model error.
+- **High estimated B-cell proportion (~40%).** Sampling location, reference mismatch or model bias could contribute. Without measured cell counts, this cannot be assumed to be a biological signal rather than an error.
 - **Single reference dataset.** Ziegler et al. represents one lab, one sequencing protocol, one patient cohort. A multi-study reference (combining Chua et al., Qi et al., Ng et al.) would improve robustness and reduce lab-specific biases.
-- **Partial external validation.** Applied to GSE163151 (Ng et al. 2021, 404 NP samples). Direction concordance 57% (8/14 cell types): T cell infiltration, macrophage recruitment, squamous expansion, and developing ciliated depletion replicate. Goblet hyperplasia and B cell changes do not. Effect size correlation r=0.057. The model partially generalises but does not cleanly replicate, likely due to cohort differences and gene space mismatch.
-- **Class imbalance in the bulk data.** 430 COVID+ vs 54 negative. The statistical tests account for this, but the negative group is small.
-- **Erythroblasts excluded.** Correct for this tissue (blood contamination), but prevents detection of genuine erythroid infiltration if it occurs in pathological conditions.
+- **Partial external validation.** Applied to GSE163151 (Ng et al. 2021, 404 NP samples). Direction concordance 57% (8/14 cell types): T cell infiltration, macrophage recruitment, squamous expansion, and developing ciliated depletion replicate. Goblet hyperplasia and B cell changes do not. Effect size correlation r=0.057. Agreement is limited. Cohort and gene-space differences are possible explanations, not established causes.
+- **Class imbalance in the bulk data.** 430 COVID+ vs 54 negative. The tests allow unequal group sizes, but do not remove confounding or the uncertainty from a small negative group.
+- **Erythroblasts excluded.** This modelling choice prevents the model from detecting genuine erythroid contributions if they are present.
 
 ## References
 

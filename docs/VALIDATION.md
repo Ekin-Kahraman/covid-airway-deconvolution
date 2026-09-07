@@ -1,11 +1,10 @@
 # Validation and Baseline Report
 
-This repo is a research-grade deconvolution case study, not a clinical model.
-The useful portfolio claim is that it frames the biological question correctly,
-uses a tissue-matched reference, records its model contract, and states where
-the evidence stops.
+This research case study estimates airway cell-type proportions from bulk
+RNA-seq. It is not a clinical model. The checks below distinguish performance
+on simulated mixtures from agreement in an external cohort.
 
-## Validation ladder
+## Validation checks
 
 | Check | Evidence | Interpretation |
 |---|---:|---|
@@ -18,15 +17,12 @@ the evidence stops.
 ## Baseline positioning
 
 The closest conceptual baselines are CIBERSORTx, MuSiC, BayesPrism, Scaden, and
-simple NNLS. This repo is strongest against weak baselines because it uses the
-right tissue reference and records an NNLS comparison. It is not yet a full
-benchmark against the leading deconvolution packages.
+simple NNLS. Only the NNLS comparison is recorded here. The project has not established
+superiority over the other methods on matched inputs.
 
-The original Lieberman et al. COVID airway analysis used CIBERSORTx with LM22, a
-blood immune reference. That can estimate immune infiltration but cannot resolve
-nasopharyngeal epithelial remodelling. This repo's stronger claim is therefore
-not "new best deconvolution method"; it is "better biological reference for this
-tissue and question".
+The tissue-matched reference includes epithelial and immune cells, which fits
+the scope of the airway question. Whether it improves accuracy over alternative
+references requires a controlled comparison.
 
 ## Statistical controls
 
@@ -51,10 +47,9 @@ p-values in downstream interpretation.
 - Large raw datasets and trained weights are not committed, so full reruns still
   require local data setup.
 
-## Portfolio read
+## Interpretation and next steps
 
-This is a credible applied computational-biology repo because it links bulk
-RNA-seq, single-cell reference data, neural deconvolution, baseline comparison,
-external validation, figures, and CI. The next highest-signal upgrade would be a
-small committed benchmark table comparing this model against NNLS plus at least
-one established package on the same pseudo-bulk split.
+The simulated-mixture results show that the model can recover proportions under
+its training assumptions. Weak external effect-size agreement limits stronger
+biological claims. Next steps are a matched comparison with an established
+method and validation against independently measured cell proportions.
